@@ -120,7 +120,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Sea
                   <tr key={payment.id}>
                     <td><Link className="row-action" href={`/afiliados/${payment.affiliateId}`}>{payment.affiliateName}</Link></td>
                     <td><span className="mono-value">{payment.affiliateDocument}</span></td>
-                    <td className="capitalize">{formatPeriod(payment.period)}</td>
+                    <td className="sentence-case">{formatPeriod(payment.period)}</td>
                     <td><span className={`source-label source-${payment.source}`}>{sourceLabels[payment.source]}</span></td>
                     <td className="mono-value">{formatCurrency(payment.amount)}</td>
                     <td><span className={`payment-badge payment-${payment.status}`}>{paymentStatusLabels[payment.status]}</span></td>

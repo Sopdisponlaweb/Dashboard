@@ -76,10 +76,10 @@ export default async function AffiliatesPage({ searchParams }: { searchParams: S
       ) : null}
 
       <section className="directory-summary" aria-label="Resumen de afiliados">
-        <article><span>Activos</span><strong>{totals.active}</strong></article>
-        <article className="summary-waiting"><span>En carencia</span><strong>{totals.waiting}</strong></article>
-        <article><span>Inactivos</span><strong>{totals.inactive}</strong></article>
-        <article className="summary-history"><span>Histórico fallecidos</span><strong>{totals.historical}</strong></article>
+        <article><span>Activos</span><strong>{totals.active.toLocaleString("es-CO")}</strong></article>
+        <article className="summary-waiting"><span>En carencia</span><strong>{totals.waiting.toLocaleString("es-CO")}</strong></article>
+        <article><span>Inactivos</span><strong>{totals.inactive.toLocaleString("es-CO")}</strong></article>
+        <article className="summary-history"><span>Histórico fallecidos</span><strong>{totals.historical.toLocaleString("es-CO")}</strong></article>
       </section>
 
       <section className="directory-panel" aria-labelledby="directory-title">

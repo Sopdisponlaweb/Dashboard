@@ -48,10 +48,10 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Se
       </header>
 
       <section className="directory-summary" aria-label="Resumen de documentos">
-        <article><span>{documentKindLabels.resume}</span><strong>{totals.resume}</strong></article>
-        <article><span>{documentKindLabels.identity}</span><strong>{totals.identity}</strong></article>
-        <article><span>{documentKindLabels.support}</span><strong>{totals.support}</strong></article>
-        <article><span>{documentKindLabels.other}</span><strong>{totals.other}</strong></article>
+        <article><span>{documentKindLabels.resume}</span><strong>{totals.resume.toLocaleString("es-CO")}</strong></article>
+        <article><span>{documentKindLabels.identity}</span><strong>{totals.identity.toLocaleString("es-CO")}</strong></article>
+        <article><span>{documentKindLabels.support}</span><strong>{totals.support.toLocaleString("es-CO")}</strong></article>
+        <article><span>{documentKindLabels.other}</span><strong>{totals.other.toLocaleString("es-CO")}</strong></article>
       </section>
 
       <section className="directory-panel" aria-labelledby="documents-directory-title">
@@ -94,11 +94,13 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Se
                     <td><span className="module-status">{documentKindLabels[document.kind]}</span></td>
                     <td>{formatDate(document.uploadedOn)}</td>
                     <td><span className="mono-value">{document.sizeLabel}</span></td>
-                    <td className="row-actions-cell">
-                      {isSupabaseConfigured() ? (
-                        <Link className="row-action" href={`/afiliados/${document.affiliateId}/documentos/${document.id}`} target="_blank">Descargar</Link>
-                      ) : null}
-                      <Link className="row-action" href={`/afiliados/${document.affiliateId}`} aria-label={`Ver expediente de ${document.affiliateName}`}>Ver ficha <Icon name="arrow" size={15} /></Link>
+                    <td>
+                      <div className="row-actions-cell">
+                        {isSupabaseConfigured() ? (
+                          <Link className="row-action" href={`/afiliados/${document.affiliateId}/documentos/${document.id}`} target="_blank">Descargar</Link>
+                        ) : null}
+                        <Link className="row-action" href={`/afiliados/${document.affiliateId}`} aria-label={`Ver expediente de ${document.affiliateName}`}>Ver ficha <Icon name="arrow" size={15} /></Link>
+                      </div>
                     </td>
                   </tr>
                 ))}

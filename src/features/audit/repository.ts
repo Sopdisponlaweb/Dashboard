@@ -12,6 +12,10 @@ export const auditTableLabels: Record<string, string> = {
   payment_batches: "Lotes de pago",
   member_documents: "Documentos",
   announcements: "Avisos",
+  credits: "Créditos",
+  credit_installments: "Abonos de crédito",
+  ai_extractions: "Extracciones IA",
+  mcp_write_proposals: "Propuestas del asistente",
 };
 
 export type AuditEvent = {

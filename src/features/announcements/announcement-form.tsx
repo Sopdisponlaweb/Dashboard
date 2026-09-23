@@ -65,16 +65,18 @@ export function AnnouncementForm({ action, persistenceEnabled }: AnnouncementFor
 
       <section className="form-section" aria-labelledby="announcement-content-title">
         <div className="form-section-heading"><span>01</span><div><h2 id="announcement-content-title">Contenido</h2><p>Lo que verá el equipo en el resumen de la operación.</p></div></div>
-        <label className="form-field">
-          <span>Título <em>*</em></span>
-          <input name="title" defaultValue={values.title} required placeholder="Ej. Jornada especial de atención" {...fieldProps("title")} />
-          {error("title")}
-        </label>
-        <label className="form-field">
-          <span>Mensaje <em>*</em></span>
-          <textarea name="message" defaultValue={values.message} rows={4} required placeholder="Detalle del aviso para el equipo interno..." {...fieldProps("message")} />
-          {error("message")}
-        </label>
+        <div className="form-section-body">
+          <label className="form-field">
+            <span>Título <em>*</em></span>
+            <input name="title" defaultValue={values.title} required placeholder="Ej. Jornada especial de atención" {...fieldProps("title")} />
+            {error("title")}
+          </label>
+          <label className="form-field">
+            <span>Mensaje <em>*</em></span>
+            <textarea name="message" defaultValue={values.message} rows={4} required placeholder="Detalle del aviso para el equipo interno..." {...fieldProps("message")} />
+            {error("message")}
+          </label>
+        </div>
       </section>
 
       <section className="form-section" aria-labelledby="announcement-window-title">

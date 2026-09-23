@@ -72,11 +72,13 @@ export default async function UsersPage() {
                       <td><UserRoleSelect userId={user.id} currentRoleKey={user.roleKey} roles={roles} /></td>
                       <td>{user.lastSignInAt ? formatDate(user.lastSignInAt.slice(0, 10)) : "Nunca"}</td>
                       <td><span className={`payment-badge ${user.isActive ? "payment-paid" : "payment-reversed"}`}>{user.isActive ? "Activo" : "Bloqueado"}</span></td>
-                      <td className="row-actions-cell">
-                        <form action={toggleUserActive.bind(null, user.id, !user.isActive)}>
-                          <button className="row-action" type="submit">{user.isActive ? "Bloquear" : "Reactivar"}</button>
-                        </form>
-                        <ResetPasswordButton userId={user.id} />
+                      <td>
+                        <div className="row-actions-cell">
+                          <form action={toggleUserActive.bind(null, user.id, !user.isActive)}>
+                            <button className="row-action" type="submit">{user.isActive ? "Bloquear" : "Reactivar"}</button>
+                          </form>
+                          <ResetPasswordButton userId={user.id} />
+                        </div>
                       </td>
                     </tr>
                   ))}

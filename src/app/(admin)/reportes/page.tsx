@@ -45,7 +45,7 @@ export default async function ReportsPage() {
             <h2>{report.title}</h2>
             <p>{report.description}</p>
             <div className="report-card-footer">
-              <span className="module-status">{report.count} registros</span>
+              <span className="module-status">{report.count.toLocaleString("es-CO")} registros</span>
               <a className="secondary-button" href={report.href} download><Icon name="file" size={15} /> Descargar CSV</a>
             </div>
           </article>

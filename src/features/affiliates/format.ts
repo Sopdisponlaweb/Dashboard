@@ -50,8 +50,11 @@ export const documentKindLabels: Record<MemberDocument["kind"], string> = {
   other: "Otro",
 };
 
+// The legacy migration stored 1970-01-01 when the original record had no date.
+const MIGRATION_PLACEHOLDER_DATE = "1970-01-01";
+
 export function formatDate(value: string | null) {
-  if (!value) return "Sin registrar";
+  if (!value || value === MIGRATION_PLACEHOLDER_DATE) return "Sin registrar";
   return dateFormatter.format(new Date(`${value}T00:00:00Z`));
 }
 
@@ -64,7 +67,11 @@ export function formatPeriod(value: string) {
 }
 
 export function getFullName(affiliate: Pick<Affiliate, "firstNames" | "lastNames">) {
-  return `${affiliate.firstNames} ${affiliate.lastNames}`;
+  return `${affiliate.firstNames} ${affiliate.lastNames}`.trim() || "Sin nombre registrado";
+}
+
+export function getInitials(person: Pick<Affiliate, "firstNames" | "lastNames">) {
+  return `${person.firstNames.trim().charAt(0)}${person.lastNames.trim().charAt(0)}` || "?";
 }
 
 export function getCoverageState(affiliate: Pick<Affiliate, "status" | "fullCoverageOn">) {

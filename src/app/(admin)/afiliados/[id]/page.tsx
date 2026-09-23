@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 
 import { Icon } from "@/components/icons";
 import { CoverageBadge, StatusBadge } from "@/features/affiliates/affiliate-badges";
-import { documentKindLabels, formatCurrency, formatDate, getCoverageState, getFullName, sourceLabels } from "@/features/affiliates/format";
+import { documentKindLabels, formatCurrency, formatDate, getCoverageState, getFullName, getInitials, sourceLabels } from "@/features/affiliates/format";
 import { getAffiliateById } from "@/features/affiliates/repository";
 import { PaymentsHistoryPanel } from "@/features/affiliates/payments-history-panel";
 import { uploadMemberDocument } from "@/features/member-documents/actions";
@@ -167,8 +167,8 @@ export default async function AffiliateDetailPage({ params, searchParams }: Affi
               <div className="beneficiary-list">
                 {currentBeneficiaries.map((beneficiary) => (
                   <article className="beneficiary-row" key={beneficiary.id}>
-                    <span className="person-initials">{beneficiary.firstNames[0]}{beneficiary.lastNames[0]}</span>
-                    <div><strong>{beneficiary.firstNames} {beneficiary.lastNames}</strong><span>{beneficiary.relationship} · {beneficiary.documentNumber ?? "Documento pendiente"}</span></div>
+                    <span className="person-initials">{getInitials(beneficiary)}</span>
+                    <div><strong>{getFullName(beneficiary)}</strong><span>{beneficiary.relationship} · {beneficiary.documentNumber ?? "Documento pendiente"}</span></div>
                     <StatusBadge status={beneficiary.status} />
                     <Link className="row-action" href={`/afiliados/${affiliate.id}/beneficiarios/${beneficiary.id}/editar`} aria-label={`Editar a ${beneficiary.firstNames} ${beneficiary.lastNames}`}>Editar</Link>
                   </article>

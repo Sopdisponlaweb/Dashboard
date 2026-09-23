@@ -37,8 +37,8 @@ export function PaymentsHistoryPanel({ payments, affiliateId }: { payments: Paym
     <>
       <div className="payments-summary" aria-label="Resumen de pagos">
         <article><span>Total abonado</span><strong>{formatCurrency(summary.totalPaid)}</strong></article>
-        <article><span>Movimientos</span><strong>{summary.count}</strong></article>
-        <article><span>Último mes pagado</span><strong className="capitalize">{summary.lastPaidPeriod ? formatPeriod(summary.lastPaidPeriod) : "Sin registrar"}</strong></article>
+        <article><span>Movimientos</span><strong>{summary.count.toLocaleString("es-CO")}</strong></article>
+        <article><span>Último mes pagado</span><strong className="sentence-case">{summary.lastPaidPeriod ? formatPeriod(summary.lastPaidPeriod) : "Sin registrar"}</strong></article>
       </div>
 
       {payments.length ? (
@@ -49,7 +49,7 @@ export function PaymentsHistoryPanel({ payments, affiliateId }: { payments: Paym
               <tbody>
                 {visible.map((payment) => (
                   <tr key={payment.id}>
-                    <td className="capitalize">{formatPeriod(payment.period)}</td>
+                    <td className="sentence-case">{formatPeriod(payment.period)}</td>
                     <td>{sourceLabels[payment.source]}</td>
                     <td className="mono-value">{formatCurrency(payment.amount)}</td>
                     <td><span className={`payment-badge payment-${payment.status}`}>{paymentStatusLabels[payment.status]}</span></td>

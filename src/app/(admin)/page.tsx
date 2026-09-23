@@ -116,7 +116,7 @@ export default async function DashboardPage() {
       )}
 
       <section aria-labelledby="titulares-heading">
-        <div className="section-heading"><h2 id="titulares-heading">Estado de titulares</h2><span>{summary.operationalTotal} registros operativos</span></div>
+        <div className="section-heading"><h2 id="titulares-heading">Estado de titulares</h2><span>{summary.operationalTotal.toLocaleString("es-CO")} registros operativos</span></div>
         <div className="metrics-grid">{holderMetrics.map((metric) => <MetricCard key={metric.label} metric={metric} />)}</div>
       </section>
 
@@ -174,7 +174,7 @@ export default async function DashboardPage() {
               <li className="distribution-item" key={item.source}>
                 <span>{sourceLabels[item.source]}</span>
                 <span className="progress-track"><span className="progress-fill" style={{ width: `${percent(item.count, activeSourceTotal)}%` }} /></span>
-                <strong>{item.count}</strong>
+                <strong>{item.count.toLocaleString("es-CO")}</strong>
               </li>
             ))}
           </ul>

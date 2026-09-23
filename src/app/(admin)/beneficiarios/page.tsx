@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { StatusBadge } from "@/features/affiliates/affiliate-badges";
-import { formatDate } from "@/features/affiliates/format";
+import { formatDate, getFullName, getInitials } from "@/features/affiliates/format";
 import { countBeneficiaries, getDashboardSummary, listBeneficiaries } from "@/features/affiliates/repository";
 import type { AffiliateStatus } from "@/features/affiliates/types";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
@@ -57,10 +57,10 @@ export default async function BeneficiariesPage({ searchParams }: { searchParams
       </header>
 
       <section className="directory-summary" aria-label="Resumen de beneficiarios">
-        <article><span>Activos</span><strong>{totals.active}</strong></article>
-        <article className="summary-waiting"><span>Inactivos / suspendidos</span><strong>{totals.inactive}</strong></article>
-        <article className="summary-history"><span>Histórico fallecidos</span><strong>{totals.deceased}</strong></article>
-        <article><span>Total</span><strong>{totals.total}</strong></article>
+        <article><span>Activos</span><strong>{totals.active.toLocaleString("es-CO")}</strong></article>
+        <article className="summary-waiting"><span>Inactivos / suspendidos</span><strong>{totals.inactive.toLocaleString("es-CO")}</strong></article>
+        <article className="summary-history"><span>Histórico fallecidos</span><strong>{totals.deceased.toLocaleString("es-CO")}</strong></article>
+        <article><span>Total</span><strong>{totals.total.toLocaleString("es-CO")}</strong></article>
       </section>
 
       <section className="directory-panel" aria-labelledby="beneficiaries-directory-title">
@@ -99,7 +99,7 @@ export default async function BeneficiariesPage({ searchParams }: { searchParams
                 {beneficiaries.map((beneficiary) => (
                   <tr key={beneficiary.id}>
                     <td>
-                      <div className="person-cell"><span className="person-initials">{beneficiary.firstNames[0]}{beneficiary.lastNames[0]}</span><span><strong>{beneficiary.firstNames} {beneficiary.lastNames}</strong></span></div>
+                      <div className="person-cell"><span className="person-initials">{getInitials(beneficiary)}</span><span><strong>{getFullName(beneficiary)}</strong></span></div>
                     </td>
                     <td><span className="mono-value">{beneficiary.documentNumber ?? "Sin registrar"}</span></td>
                     <td>{beneficiary.relationship}</td>
