@@ -8,6 +8,7 @@ import { CoverageBadge, StatusBadge } from "@/features/affiliates/affiliate-badg
 import { affiliateStatuses, affiliationSources, formatDate, getCoverageState, getFullName, sourceLabels, statusPluralLabels } from "@/features/affiliates/format";
 import { countAffiliates, getDashboardSummary, listAffiliates } from "@/features/affiliates/repository";
 import type { AffiliateFilters, AffiliateStatus, AffiliationSource } from "@/features/affiliates/types";
+import { ArchivedMatches } from "@/features/archive/archived-notice";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 export const metadata: Metadata = { title: "Afiliados" };
@@ -22,6 +23,7 @@ type SearchParams = Promise<{
   source?: string | string[];
   sucesion?: string | string[];
   carencia?: string | string[];
+  mora?: string | string[];
   result?: string | string[];
   page?: string | string[];
 }>;
@@ -61,13 +63,14 @@ export default async function AffiliatesPage({ searchParams }: { searchParams: S
   const rawCoverage = firstValue(params.carencia) ?? "todos";
   const coverageSlug = rawCoverage in coverageFilters ? (rawCoverage as CoverageSlug) : null;
   const coverage = coverageSlug ? coverageFilters[coverageSlug] : "all";
+  const arrearsRisk = firstValue(params.mora) === "riesgo";
 
   // Pending/succeeded successions are about deceased titulars, which the operational view hides.
   const needsDeceased = succession === "pending" || succession === "succeeded";
   const statusValue = legacyPending ? "operational" : rawStatus;
   const effectiveStatus = statusValue === "operational" ? "all" : status;
   const excludeDeceased = statusValue === "operational" && !needsDeceased;
-  const filters: AffiliateFilters = { query, status: effectiveStatus, source, excludeDeceased, succession, coverage };
+  const filters: AffiliateFilters = { query, status: effectiveStatus, source, excludeDeceased, succession, coverage, arrears: arrearsRisk ? "risk" : "all" };
 
   const [affiliatesResult, totalCount, summary] = await Promise.all([
     listAffiliates({ ...filters, page, pageSize: PAGE_SIZE }),
@@ -92,6 +95,7 @@ export default async function AffiliatesPage({ searchParams }: { searchParams: S
         </div>
         <div className="page-actions">
           <DataSourceBadge connected={isSupabaseConfigured()} />
+          <Link className="secondary-button" href="/afiliados/archivo"><Icon name="lock" size={16} /> Archivo de retirados</Link>
           <Link className="primary-button" href="/afiliados/nuevo"><Icon name="users" size={16} /> Nuevo afiliado</Link>
         </div>
       </header>
@@ -159,9 +163,18 @@ export default async function AffiliatesPage({ searchParams }: { searchParams: S
               <option value="cobertura-completa">Cobertura completa</option>
             </select>
           </label>
+          <label>
+            <span>Mora</span>
+            <select name="mora" defaultValue={arrearsRisk ? "riesgo" : "todos"}>
+              <option value="todos">Todos</option>
+              <option value="riesgo">En riesgo de suspensión (2 meses sin pagar)</option>
+            </select>
+          </label>
           <button className="primary-button" type="submit">Aplicar filtros</button>
           <Link className="secondary-button" href="/afiliados">Limpiar</Link>
         </form>
+
+        {query ? <ArchivedMatches query={query} /> : null}
 
         {affiliatesResult.length ? (
           <div className="data-table-wrap">
@@ -211,6 +224,7 @@ export default async function AffiliatesPage({ searchParams }: { searchParams: S
             source,
             ...(successionSlug ? { sucesion: successionSlug } : {}),
             ...(coverageSlug ? { carencia: coverageSlug } : {}),
+            ...(arrearsRisk ? { mora: "riesgo" } : {}),
           }}
         />
       </section>

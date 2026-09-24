@@ -3,217 +3,238 @@ import { Suspense } from "react";
 
 import { DataSourceBadge } from "@/components/data-source-badge";
 import { Icon, type IconName } from "@/components/icons";
-import { formatCurrency, formatDate, formatPeriod, sourceLabels } from "@/features/affiliates/format";
+import { formatCurrency, formatDate, formatPeriod } from "@/features/affiliates/format";
 import { getDashboardSummary } from "@/features/affiliates/repository";
 import { listActiveAnnouncements } from "@/features/announcements/repository";
-import { PaymentGapsOverview, PaymentGapsOverviewFallback } from "@/features/payments/payment-gaps-overview";
+import { CollectionChart } from "@/features/dashboard/collection-chart";
+import { formatCompactCurrency, getDashboardInsights, percentChange } from "@/features/dashboard/insights";
+import { ActivityFeed, AttentionFallback, AttentionPanel, DeltaChip, SourceBars, Sparkline, StatusComposition } from "@/features/dashboard/widgets";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
-type Metric = { label: string; value: number; note: string; tone: string; icon: IconName };
-
-const monthLabelFormatter = new Intl.DateTimeFormat("es-CO", { month: "short", year: "2-digit", timeZone: "UTC" });
-const headingDateFormatter = new Intl.DateTimeFormat("es-CO", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Bogota" });
+const headingDateFormatter = new Intl.DateTimeFormat("es-CO", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "America/Bogota" });
+const updatedAtFormatter = new Intl.DateTimeFormat("es-CO", { hour: "numeric", minute: "2-digit", timeZone: "America/Bogota" });
 
 function capitalize(value: string) {
   return value.charAt(0).toLocaleUpperCase("es-CO") + value.slice(1);
 }
 
-function monthLabel(period: string) {
-  return capitalize(monthLabelFormatter.format(new Date(`${period}-01T00:00:00Z`)).replace(".", ""));
-}
+type Tile = { label: string; value: string; note: React.ReactNode; icon: IconName; tone: string; href?: string };
 
-function percent(part: number, total: number) {
-  return total > 0 ? Math.round((part / total) * 1000) / 10 : 0;
-}
-
-function MetricCard({ metric }: { metric: Metric }) {
-  return (
-    <article className={`metric-card ${metric.tone}`}>
-      <div className="metric-top">
-        <span className="metric-label">{metric.label}</span>
-        <span className="metric-icon"><Icon name={metric.icon} size={18} /></span>
-      </div>
-      <div className="metric-value">{metric.value.toLocaleString("es-CO")}</div>
-      <div className="metric-note">{metric.note}</div>
-    </article>
+function KpiTile({ tile }: { tile: Tile }) {
+  const body = (
+    <>
+      <span className="kpi-top">
+        <span className="kpi-label">{tile.label}</span>
+        <span className="kpi-icon" aria-hidden="true"><Icon name={tile.icon} size={17} /></span>
+      </span>
+      <strong className="kpi-value">{tile.value}</strong>
+      <span className="kpi-note">{tile.note}</span>
+    </>
   );
+  return tile.href
+    ? <Link className={`kpi-tile ${tile.tone}`} href={tile.href}>{body}</Link>
+    : <article className={`kpi-tile ${tile.tone}`}>{body}</article>;
 }
 
 export default async function DashboardPage() {
   const persistenceEnabled = isSupabaseConfigured();
-  const [summary, activeAnnouncements] = await Promise.all([
+  const [summary, insights, announcements] = await Promise.all([
     getDashboardSummary(),
+    getDashboardInsights(),
     persistenceEnabled ? listActiveAnnouncements() : Promise.resolve([]),
   ]);
 
-  const holderMetrics: Metric[] = [
-    { label: "Titulares activos", value: summary.holderStatusCounts.active, note: `${percent(summary.holderStatusCounts.active, summary.operationalTotal)} % del total operativo`, tone: "metric-success", icon: "users" },
-    { label: "En carencia", value: summary.waitingCoverageCount, note: "Cobertura menor a 6 meses", tone: "metric-warning", icon: "calendar" },
-    { label: "Suspendidos", value: summary.holderStatusCounts.inactive, note: "3 a 5 meses en mora", tone: "metric-info", icon: "activity" },
-    { label: "Retirados", value: summary.holderStatusCounts.suspended, note: "6 meses o más en mora", tone: "metric-danger", icon: "lock" },
-  ];
+  const now = new Date();
+  const counts = summary.holderStatusCounts;
+  const operational = counts.active + counts.inactive + counts.suspended;
+  const beneficiariesActive = summary.beneficiaryStatusCounts.active;
 
-  const beneficiaryMetrics: Metric[] = [
-    { label: "Beneficiarios activos", value: summary.beneficiaryStatusCounts.active, note: "Vinculados a titulares vigentes", tone: "metric-success", icon: "heart" },
-    { label: "Beneficiarios suspendidos o retirados", value: summary.beneficiaryStatusCounts.inactive + summary.beneficiaryStatusCounts.suspended, note: "Fuera de cobertura", tone: "metric-info", icon: "users" },
+  // Collection: the last closed month leads; the current one is shown as partial.
+  const monthly = insights?.monthly ?? [];
+  const lastClosed = monthly.find((month) => month.period === insights?.lastClosedMonth) ?? null;
+  const previousClosed = monthly[monthly.findIndex((month) => month.period === insights?.lastClosedMonth) - 1] ?? null;
+  const closedMonths = monthly.filter((month) => month.period !== insights?.currentMonth);
+  const collectionChange = lastClosed && previousClosed ? percentChange(lastClosed.amount, previousClosed.amount) : null;
+  const payersChange = lastClosed && previousClosed ? lastClosed.payers - previousClosed.payers : null;
+  const paymentRate = insights && insights.activeCount ? (insights.activePaidLastMonth / insights.activeCount) * 100 : null;
+  const yearAgo = closedMonths[0] ?? null;
+  const payersYearChange = lastClosed && yearAgo ? percentChange(lastClosed.payers, yearAgo.payers) : null;
+
+  const tiles: Tile[] = [
     {
-      label: "Titulares fallecidos",
-      value: summary.holderStatusCounts.deceased,
-      note: summary.pendingSuccessionCount ? `${summary.pendingSuccessionCount.toLocaleString("es-CO")} con sucesión pendiente` : "Conservados en histórico",
-      tone: "metric-danger",
-      icon: "history",
+      label: "Titulares activos",
+      value: counts.active.toLocaleString("es-CO"),
+      note: <>de {operational.toLocaleString("es-CO")} en la base operativa</>,
+      icon: "users", tone: "tone-good", href: "/afiliados?status=active",
     },
-    { label: "Beneficiarios fallecidos", value: summary.beneficiaryStatusCounts.deceased, note: "Ocultos en la vista operativa", tone: "metric-danger", icon: "history" },
+    {
+      label: "Beneficiarios activos",
+      value: beneficiariesActive.toLocaleString("es-CO"),
+      note: <>de {(beneficiariesActive + summary.beneficiaryStatusCounts.inactive + summary.beneficiaryStatusCounts.suspended).toLocaleString("es-CO")} registrados, sin fallecidos</>,
+      icon: "heart", tone: "tone-info", href: "/beneficiarios?status=active",
+    },
+    {
+      label: "En carencia",
+      value: (summary.waitingCoverageCount + (insights?.beneficiariesWaiting ?? 0)).toLocaleString("es-CO"),
+      note: <>{summary.waitingCoverageCount.toLocaleString("es-CO")} titulares · {(insights?.beneficiariesWaiting ?? 0).toLocaleString("es-CO")} beneficiarios</>,
+      icon: "calendar", tone: "tone-warning", href: "/beneficiarios?carencia=en-carencia",
+    },
+    {
+      label: "Cartera de créditos",
+      value: insights ? formatCompactCurrency(insights.credits.outstanding + insights.credits.pausedOutstanding) : "—",
+      note: insights
+        ? <>{insights.credits.activeCount} {insights.credits.activeCount === 1 ? "crédito activo" : "créditos activos"}{insights.credits.pausedCount ? ` · ${insights.credits.pausedCount} en pausa` : ""}</>
+        : "Disponible con Supabase",
+      icon: "creditCard", tone: "tone-primary", href: "/creditos",
+    },
   ];
-
-  const maxMonthlyAmount = Math.max(1, ...summary.monthlyPayments.map((entry) => entry.amount));
-  const activeSourceTotal = summary.sourceDistribution.reduce((sum, entry) => sum + entry.count, 0);
-
-  const activityItems = [
-    ...summary.recentPayments.map((payment) => ({
-      key: `payment-${payment.affiliateId}-${payment.period}`,
-      title: "Pago aplicado",
-      detail: `${payment.affiliateName} · ${formatPeriod(payment.period)} · ${formatCurrency(payment.amount)}`,
-      date: payment.paidOn,
-      colorVar: "var(--color-success)",
-      softVar: "var(--color-success-soft)",
-    })),
-    ...summary.moraAlerts.map((alert) => ({
-      key: `mora-${alert.affiliateId}`,
-      title: alert.status === "suspended" ? "Cambió a suspendido por mora" : "Cambió a inactivo por mora",
-      detail: `${alert.affiliateName} · Último pago ${formatDate(alert.lastPaymentOn)}`,
-      date: alert.lastPaymentOn ?? "",
-      colorVar: alert.status === "suspended" ? "var(--color-danger)" : "var(--color-warning)",
-      softVar: alert.status === "suspended" ? "var(--color-danger-soft)" : "var(--color-warning-soft)",
-    })),
-  ]
-    .sort((a, b) => (a.date < b.date ? 1 : -1))
-    .slice(0, 4);
 
   return (
-    <>
-      <header className="page-heading">
+    <div className="dashboard">
+      <header className="dash-header">
         <div>
-          <p className="eyebrow">{capitalize(headingDateFormatter.format(new Date()))}</p>
+          <p className="eyebrow">{capitalize(headingDateFormatter.format(now))}</p>
           <h1>Resumen de la operación</h1>
-          <p>Indicadores de afiliación, cobertura y recaudo para tomar decisiones desde un solo lugar.</p>
+          <p>Afiliación, recaudo, cartera y pendientes de Sopdisponal en una sola vista.</p>
         </div>
-        <DataSourceBadge connected={persistenceEnabled} connectedLabel="Calculado sobre datos de Supabase local" />
+        <div className="dash-header-side">
+          <DataSourceBadge connected={persistenceEnabled} connectedLabel={`Datos al ${updatedAtFormatter.format(now)}`} />
+          <div className="dash-actions">
+            <Link className="secondary-button" href="/reportes"><Icon name="chart" size={15} /> Reportes</Link>
+            <Link className="secondary-button" href="/importaciones"><Icon name="upload" size={15} /> Cargar pagos</Link>
+            <Link className="primary-button" href="/afiliados/nuevo"><Icon name="plus" size={15} /> Nuevo afiliado</Link>
+          </div>
+        </div>
       </header>
 
-      {activeAnnouncements.length ? (
-        activeAnnouncements.map((announcement) => (
-          <section className="announcement" aria-label="Aviso interno" key={announcement.id}>
-            <span className="announcement-icon"><Icon name="calendar" /></span>
+      {announcements.map((announcement) => (
+        <section className="dash-announcement" aria-label="Aviso interno" key={announcement.id}>
+          <span className="dash-announcement-icon" aria-hidden="true"><Icon name="bell" size={17} /></span>
+          <p><strong>{announcement.title}</strong> {announcement.message}</p>
+          <span className="dash-announcement-meta">Hasta {formatDate(announcement.endsAt.slice(0, 10))} · <Link href="/avisos">Gestionar avisos</Link></span>
+        </section>
+      ))}
+
+      <section className="kpi-row" aria-label="Indicadores principales">
+        {tiles.map((tile) => <KpiTile key={tile.label} tile={tile} />)}
+      </section>
+
+      <div className="dash-grid dash-grid-main">
+        <section className="dash-card dash-collection" aria-labelledby="collection-title">
+          <header className="dash-card-header">
             <div>
-              <strong>{announcement.title}</strong>
-              <span>{announcement.message}</span>
+              <h2 id="collection-title">Recaudo de aportes</h2>
+              <p>Pagos aplicados por periodo · últimos 12 meses y el mes en curso</p>
             </div>
-            <span className="announcement-meta">Vigente hasta {formatDate(announcement.endsAt.slice(0, 10))} · <Link href="/avisos">Gestionar avisos</Link></span>
-          </section>
-        ))
-      ) : (
-        <section className="announcement" aria-label="Aviso interno">
-          <span className="announcement-icon"><Icon name="calendar" /></span>
-          <div>
-            <strong>Sin avisos vigentes</strong>
-            <span>No hay comunicados internos activos en este momento.</span>
-          </div>
-          <span className="announcement-meta"><Link href="/avisos">Gestionar avisos</Link></span>
-        </section>
-      )}
+            <Link className="panel-link" href="/pagos">Ver pagos <Icon name="arrow" size={14} /></Link>
+          </header>
 
-      <section aria-labelledby="titulares-heading">
-        <div className="section-heading"><h2 id="titulares-heading">Estado de titulares</h2><span>{summary.operationalTotal.toLocaleString("es-CO")} registros operativos</span></div>
-        <div className="metrics-grid">{holderMetrics.map((metric) => <MetricCard key={metric.label} metric={metric} />)}</div>
-      </section>
-
-      <section aria-labelledby="beneficiarios-heading">
-        <div className="section-heading"><h2 id="beneficiarios-heading">Titulares y beneficiarios en histórico</h2><span>Los fallecidos no aparecen en vistas operativas</span></div>
-        <div className="metrics-grid">{beneficiaryMetrics.map((metric) => <MetricCard key={metric.label} metric={metric} />)}</div>
-      </section>
-
-      <section aria-labelledby="continuidad-heading">
-        <div className="section-heading">
-          <h2 id="continuidad-heading">Continuidad de pagos</h2>
-          <span>Meses sin pago entre dos meses pagados · últimos 12 meses · <Link href="/pagos/continuidad">Ver titulares</Link></span>
-        </div>
-        {persistenceEnabled ? (
-          <Suspense fallback={<PaymentGapsOverviewFallback />}>
-            <PaymentGapsOverview />
-          </Suspense>
-        ) : <p className="empty-hint">Disponible con la conexión a Supabase.</p>}
-      </section>
-
-      <div className="dashboard-grid">
-        <section className="panel" aria-labelledby="recaudo-heading">
-          <div className="panel-header"><div><h2 id="recaudo-heading">Recaudo mensual</h2><p>Pagos aplicados durante los últimos meses con datos disponibles</p></div><span className="panel-tag">COP</span></div>
-          <div className="payment-summary">
-            <strong>{formatCurrency(summary.totalCollected)}</strong>
-            <span>{summary.collectedChangePercent === null
-              ? "Sin datos suficientes para comparar"
-              : `${summary.collectedChangePercent >= 0 ? "+" : ""}${summary.collectedChangePercent} % frente al mes anterior`}</span>
-          </div>
-          {summary.monthlyPayments.length ? (
-            <div className="bar-chart" aria-label={`Recaudo mensual calculado sobre datos ${persistenceEnabled ? "de Supabase local" : "de demostración"}`}>
-              {summary.monthlyPayments.map((payment) => (
-                <div className="bar-item" key={payment.period}>
-                  <div className="bar-fill" style={{ height: `${Math.max(6, Math.round((payment.amount / maxMonthlyAmount) * 100))}%` }} />
-                  <small>{monthLabel(payment.period)}</small>
+          {lastClosed ? (
+            <div className="collection-hero">
+              <div className="collection-lead">
+                <span className="collection-label sentence-case">{formatPeriod(lastClosed.period)} · último mes cerrado</span>
+                <strong className="hero-figure">{formatCurrency(lastClosed.amount)}</strong>
+                <DeltaChip value={collectionChange} suffix={previousClosed ? `frente a ${formatPeriod(previousClosed.period).split(" ")[0]}` : ""} />
+              </div>
+              <dl className="collection-stats">
+                <div>
+                  <dt>Titulares que pagaron</dt>
+                  <dd>
+                    <strong>{lastClosed.payers.toLocaleString("es-CO")}</strong>
+                    {payersChange !== null ? <span className={payersChange < 0 ? "stat-down" : "stat-up"}>{payersChange > 0 ? "+" : payersChange < 0 ? "−" : ""}{Math.abs(payersChange).toLocaleString("es-CO")} vs. mes anterior</span> : null}
+                  </dd>
+                  <Sparkline values={closedMonths.map((month) => month.payers)} label={`Titulares que pagaron por mes, de ${closedMonths[0]?.payers.toLocaleString("es-CO")} a ${lastClosed.payers.toLocaleString("es-CO")}`} />
+                  {payersYearChange !== null ? <small>{payersYearChange > 0 ? "+" : "−"}{Math.abs(payersYearChange).toLocaleString("es-CO")} % en 12 meses</small> : null}
                 </div>
-              ))}
+                <div>
+                  <dt>Tasa de pago</dt>
+                  <dd><strong>{paymentRate !== null ? `${paymentRate.toLocaleString("es-CO", { maximumFractionDigits: 1 })} %` : "—"}</strong></dd>
+                  <span className="meter" aria-hidden="true"><span style={{ width: `${Math.min(paymentRate ?? 0, 100)}%` }} /></span>
+                  <small>{insights?.activePaidLastMonth.toLocaleString("es-CO")} de {insights?.activeCount.toLocaleString("es-CO")} activos pagaron {formatPeriod(lastClosed.period).split(" ")[0]}</small>
+                </div>
+              </dl>
             </div>
-          ) : (
-            <p className="empty-hint">{persistenceEnabled ? "Aún no hay pagos registrados en Supabase." : "Aún no hay pagos registrados en los datos de demostración."}</p>
-          )}
+          ) : null}
+
+          {monthly.length ? (
+            <>
+              <CollectionChart months={monthly} currentMonth={insights?.currentMonth ?? ""} highlight={insights?.lastClosedMonth ?? ""} />
+              <p className="chart-key"><span className="chart-key-swatch is-partial" aria-hidden="true" /> Columna clara: mes en curso, todavía parcial.</p>
+              <details className="chart-table">
+                <summary>Ver los datos en tabla</summary>
+                <div className="data-table-wrap">
+                  <table className="data-table compact-table">
+                    <thead><tr><th>Periodo</th><th>Recaudo</th><th>Pagos</th><th>Titulares</th></tr></thead>
+                    <tbody>
+                      {[...monthly].reverse().map((month) => (
+                        <tr key={month.period}>
+                          <td className="sentence-case">{formatPeriod(month.period)}{month.period === insights?.currentMonth ? " (en curso)" : ""}</td>
+                          <td className="mono-value">{formatCurrency(month.amount)}</td>
+                          <td className="mono-value">{month.payments.toLocaleString("es-CO")}</td>
+                          <td className="mono-value">{month.payers.toLocaleString("es-CO")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </>
+          ) : <p className="empty-hint">El recaudo mensual se calcula con la conexión a Supabase.</p>}
         </section>
 
-        <section id="actividad" className="panel" aria-labelledby="actividad-heading">
-          <div className="panel-header"><div><h2 id="actividad-heading">Notificaciones recientes</h2><p>Cambios que requieren seguimiento</p></div><span className="panel-tag">{activityItems.length} recientes</span></div>
-          {activityItems.length ? (
-            <ul className="activity-list">
-              {activityItems.map((activity) => (
-                <li className="activity-item" key={activity.key}>
-                  <span className="activity-mark" style={{ "--activity-color": activity.colorVar, "--activity-soft": activity.softVar } as React.CSSProperties} />
-                  <span className="activity-copy"><strong>{activity.title}</strong><span>{activity.detail}</span></span>
-                  <span className="activity-time">{formatDate(activity.date || null)}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="empty-hint">No hay actividad reciente para mostrar.</p>
-          )}
+        <section className="dash-card" aria-labelledby="attention-title">
+          <header className="dash-card-header">
+            <div><h2 id="attention-title">Requiere atención</h2><p>Pendientes que necesitan una acción</p></div>
+          </header>
+          {insights ? (
+            <Suspense fallback={<AttentionFallback />}>
+              <AttentionPanel insights={insights} pendingSuccessions={summary.pendingSuccessionCount ?? 0} upcomingCoverage={summary.upcomingCoverageCount} />
+            </Suspense>
+          ) : <p className="empty-hint">Disponible con la conexión a Supabase.</p>}
         </section>
       </div>
 
-      <div className="dashboard-lower-grid">
-        <section className="panel" aria-labelledby="distribucion-heading">
-          <div className="panel-header"><div><h2 id="distribucion-heading">Tipo de afiliación</h2><p>Distribución de titulares activos</p></div></div>
-          <ul className="distribution-list">
-            {summary.sourceDistribution.map((item) => (
-              <li className="distribution-item" key={item.source}>
-                <span>{sourceLabels[item.source]}</span>
-                <span className="progress-track"><span className="progress-fill" style={{ width: `${percent(item.count, activeSourceTotal)}%` }} /></span>
-                <strong>{item.count.toLocaleString("es-CO")}</strong>
-              </li>
-            ))}
-          </ul>
+      <div className="dash-grid dash-grid-halves">
+        <section className="dash-card" aria-labelledby="status-title">
+          <header className="dash-card-header">
+            <div><h2 id="status-title">Estado de los titulares</h2><p>{operational.toLocaleString("es-CO")} titulares en la base operativa, según sus pagos</p></div>
+            <Link className="panel-link" href="/afiliados">Ver afiliados <Icon name="arrow" size={14} /></Link>
+          </header>
+          <StatusComposition counts={counts} deceased={counts.deceased} pendingSuccessions={summary.pendingSuccessionCount ?? 0} />
         </section>
 
-        <section className="panel" aria-labelledby="cobertura-heading">
-          <div className="panel-header"><div><h2 id="cobertura-heading">Cobertura y accesos rápidos</h2><p>Seguimiento del periodo inicial de seis meses</p></div></div>
-          <div className="coverage-callout">
-            <span className="coverage-icon"><Icon name="calendar" size={19} /></span>
-            <span className="coverage-copy"><strong>Afiliados próximos a cobertura completa</strong><span>{summary.upcomingCoverageCount} {summary.upcomingCoverageCount === 1 ? "persona completa" : "personas completan"} el periodo durante los próximos 30 días.</span></span>
-            <span className="coverage-count">{summary.upcomingCoverageCount}</span>
-          </div>
-          <div className="quick-actions">
-            <Link href="/consulta" className="quick-action"><Icon name="search" size={17} /> Consultar afiliado</Link>
-            <Link href="/importaciones" className="quick-action"><Icon name="upload" size={17} /> Cargar pagos</Link>
-            <Link href="/reportes" className="quick-action"><Icon name="file" size={17} /> Crear informe</Link>
-          </div>
+        <section className="dash-card" aria-labelledby="sources-title">
+          <header className="dash-card-header">
+            <div><h2 id="sources-title">Titulares activos por tipo de afiliación</h2><p>{counts.active.toLocaleString("es-CO")} titulares activos</p></div>
+          </header>
+          <SourceBars distribution={summary.sourceDistribution} />
         </section>
       </div>
-    </>
+
+      <div className="dash-grid dash-grid-side">
+        <section className="dash-card" aria-labelledby="credits-title">
+          <header className="dash-card-header">
+            <div><h2 id="credits-title">Cartera de créditos</h2><p>Saldo por cobrar y recaudo del mes</p></div>
+            <Link className="panel-link" href="/creditos">Ver créditos <Icon name="arrow" size={14} /></Link>
+          </header>
+          {insights ? (
+            <dl className="mini-stats">
+              <div><dt>Saldo por cobrar</dt><dd>{formatCurrency(insights.credits.outstanding)}</dd><small>{insights.credits.activeCount} {insights.credits.activeCount === 1 ? "crédito activo" : "créditos activos"}</small></div>
+              <div><dt>Abonado este mes</dt><dd>{formatCurrency(insights.credits.collectedThisMonth)}</dd><small><Link href="/creditos/pagos">Ver pagos de créditos</Link></small></div>
+              <div><dt>En pausa</dt><dd>{formatCurrency(insights.credits.pausedOutstanding)}</dd><small>{insights.credits.pausedCount} {insights.credits.pausedCount === 1 ? "crédito" : "créditos"} por decidir</small></div>
+              <div><dt>Paz y salvo por emitir</dt><dd>{insights.credits.clearancesPending.toLocaleString("es-CO")}</dd><small>Créditos pagados sin certificado</small></div>
+            </dl>
+          ) : <p className="empty-hint">Disponible con la conexión a Supabase.</p>}
+        </section>
+
+        <section className="dash-card" aria-labelledby="activity-title">
+          <header className="dash-card-header">
+            <div><h2 id="activity-title">Actividad reciente</h2><p>Últimos movimientos registrados en la plataforma</p></div>
+            <Link className="panel-link" href="/auditoria">Ver auditoría <Icon name="arrow" size={14} /></Link>
+          </header>
+          <ActivityFeed events={(insights?.recentActivity ?? []).slice(0, 6)} />
+        </section>
+      </div>
+    </div>
   );
 }

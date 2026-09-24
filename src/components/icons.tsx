@@ -3,7 +3,8 @@ import type { ReactNode } from "react";
 export type IconName =
   | "dashboard" | "search" | "users" | "heart" | "wallet" | "upload"
   | "file" | "chart" | "layers" | "lock" | "history" | "message"
-  | "menu" | "bell" | "calendar" | "activity" | "arrow" | "plus" | "creditCard" | "edit";
+  | "menu" | "bell" | "calendar" | "activity" | "arrow" | "plus" | "creditCard" | "edit"
+  | "alert" | "check" | "trendUp" | "trendDown";
 
 const paths: Record<IconName, ReactNode> = {
   dashboard: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,
@@ -26,6 +27,10 @@ const paths: Record<IconName, ReactNode> = {
   plus: <><path d="M12 5v14M5 12h14"/></>,
   creditCard: <><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></>,
   edit: <><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></>,
+  alert: <><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></>,
+  check: <path d="M20 6 9 17l-5-5"/>,
+  trendUp: <><path d="m3 17 6-6 4 4 8-8"/><path d="M14 7h7v7"/></>,
+  trendDown: <><path d="m3 7 6 6 4-4 8 8"/><path d="M14 17h7v-7"/></>,
 };
 
 export function Icon({ name, size = 20, strokeWidth = 1.8 }: { name: IconName; size?: number; strokeWidth?: number }) {

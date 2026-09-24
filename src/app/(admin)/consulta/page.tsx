@@ -6,6 +6,7 @@ import { Pagination } from "@/components/pagination";
 import { CoverageBadge, StatusBadge } from "@/features/affiliates/affiliate-badges";
 import { getFullName, getInitials, sourceLabels } from "@/features/affiliates/format";
 import { countAffiliates, listAffiliates } from "@/features/affiliates/repository";
+import { ArchivedMatches } from "@/features/archive/archived-notice";
 
 export const metadata: Metadata = { title: "Consulta integral" };
 
@@ -39,6 +40,8 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
           <button type="submit">Buscar</button>
         </form>
       </section>
+
+      {query ? <ArchivedMatches query={query} /> : null}
 
       {!query ? (
         <section className="search-empty" aria-label="Ayuda de búsqueda">

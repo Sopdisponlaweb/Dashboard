@@ -296,6 +296,13 @@ function applyCoverageFilter<Q extends { eq: any; gt: any; lte: any }>(q: Q, cov
   return q;
 }
 
+/** Last paid month that already means two months without paying (same rule as get_dashboard_insights). */
+function arrearsRiskCutoff() {
+  const [year, month] = todayInBogota().split("-").map(Number);
+  const index = year * 12 + (month - 1) - 2;
+  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}-01`;
+}
+
 /** Date range [from, to) on a date column; both ends optional (YYYY-MM-DD). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applyDateRange<Q extends { gte: any; lt: any }>(q: Q, column: string, from?: string, to?: string): Q {
@@ -323,6 +330,7 @@ function applyAffiliateFilters(query: any, filters: AffiliateFilters): any {
   // A future affiliation date is bad migrated data, not a waiting period.
   q = applyCoverageFilter(q, filters.coverage);
   q = applyDateRange(q, "joined_on", filters.joinedFrom, filters.joinedTo);
+  if (filters.arrears === "risk") q = q.eq("status", "active").lte("last_payment_on", arrearsRiskCutoff());
   if (search.trim()) {
     const like = `%${search.trim()}%`;
     q = q.or(`first_names.ilike.${like},last_names.ilike.${like},document_number.ilike.${like}`);

@@ -23,6 +23,7 @@ const rowStatusTone: Record<ImportRowStatus, string> = {
   "not-found": "import-row-error",
   "invalid-amount": "import-row-error",
   "missing-document": "import-row-error",
+  archived: "import-row-warning",
 };
 
 // Start with 10 rows so the table fits on screen; larger sizes stay one click away.

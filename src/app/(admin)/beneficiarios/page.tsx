@@ -5,6 +5,7 @@ import { CoverageBadge, StatusBadge } from "@/features/affiliates/affiliate-badg
 import { affiliateStatuses, formatDate, getCoverageState, getFullName, getInitials, statusPluralLabels } from "@/features/affiliates/format";
 import { countBeneficiaries, getDashboardSummary, listBeneficiaries, type BeneficiaryDirectoryFilters } from "@/features/affiliates/repository";
 import type { AffiliateStatus } from "@/features/affiliates/types";
+import { ArchivedMatches } from "@/features/archive/archived-notice";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 import { DataSourceBadge } from "@/components/data-source-badge";
@@ -106,6 +107,8 @@ export default async function BeneficiariesPage({ searchParams }: { searchParams
           <button className="primary-button" type="submit">Aplicar filtros</button>
           <Link className="secondary-button" href="/beneficiarios">Limpiar</Link>
         </form>
+
+        {query ? <ArchivedMatches query={query} /> : null}
 
         {beneficiaries.length ? (
           <div className="data-table-wrap">

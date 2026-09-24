@@ -1,6 +1,6 @@
 import { normalizeDocumentNumber } from "@/features/affiliates/validation";
 
-export type ImportRowStatus = "ready" | "duplicate" | "not-found" | "invalid-amount" | "missing-document";
+export type ImportRowStatus = "ready" | "duplicate" | "not-found" | "archived" | "invalid-amount" | "missing-document";
 
 export type ParsedImportRow = {
   line: number;
@@ -31,6 +31,7 @@ const rowStatusLabels: Record<ImportRowStatus, string> = {
   ready: "Lista para aplicar",
   duplicate: "Documento duplicado en el archivo",
   "not-found": "Titular no encontrado",
+  archived: "Retirado archivado · ver plataforma antigua",
   "invalid-amount": "Valor inválido",
   "missing-document": "Falta el número de documento",
 };
@@ -52,7 +53,8 @@ export type MappedImportRow = {
   observation: string | null;
 };
 
-export function matchImportRows(mappedRows: MappedImportRow[], affiliates: ImportableAffiliate[]): ImportPreview {
+/** `archivedNames`: document → name of titulars archived after retiring (not payable here). */
+export function matchImportRows(mappedRows: MappedImportRow[], affiliates: ImportableAffiliate[], archivedNames = new Map<string, string>()): ImportPreview {
   const affiliateIndex = new Map(affiliates.map((affiliate) => [normalizeDocumentNumber(affiliate.documentNumber), affiliate]));
   const seenDocuments = new Set<string>();
 
@@ -67,7 +69,7 @@ export function matchImportRows(mappedRows: MappedImportRow[], affiliates: Impor
     let status: ImportRowStatus;
     if (!documentNumber) status = "missing-document";
     else if (isDuplicate) status = "duplicate";
-    else if (!affiliate) status = "not-found";
+    else if (!affiliate) status = archivedNames.has(documentNumber) ? "archived" : "not-found";
     else if (amount === null) status = "invalid-amount";
     else status = "ready";
 
@@ -79,7 +81,7 @@ export function matchImportRows(mappedRows: MappedImportRow[], affiliates: Impor
       observation,
       status,
       affiliateId: affiliate?.id ?? null,
-      affiliateName: affiliate ? `${affiliate.firstNames} ${affiliate.lastNames}` : null,
+      affiliateName: affiliate ? `${affiliate.firstNames} ${affiliate.lastNames}` : archivedNames.get(documentNumber) ?? null,
     };
   });
 

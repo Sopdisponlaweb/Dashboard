@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 
 import { applyPaymentImport, listAffiliates, type ApplyImportRow } from "@/features/affiliates/repository";
 import type { AffiliationSource } from "@/features/affiliates/types";
+import { normalizeDocumentNumber } from "@/features/affiliates/validation";
+import { findArchivedTitulars } from "@/features/archive/repository";
 
 import type { ApplyBatchState, ImportBatchState } from "./form-state";
 import { matchImportRows, type MappedImportRow } from "./parse";
@@ -41,7 +43,12 @@ export async function previewImportBatch(
   }
 
   const affiliates = await listAffiliates();
-  const preview = matchImportRows(mappedRows, affiliates);
+  // Documents with no titular here may belong to someone archived after retiring.
+  const known = new Set(affiliates.map((affiliate) => normalizeDocumentNumber(affiliate.documentNumber)));
+  const unknown = [...new Set(mappedRows.map((row) => normalizeDocumentNumber(row.documentNumberRaw)).filter((document) => document && !known.has(document)))];
+  const archived = await findArchivedTitulars(unknown);
+  const archivedNames = new Map([...archived].map(([document, member]) => [document, member.name]));
+  const preview = matchImportRows(mappedRows, affiliates, archivedNames);
 
   return { status: "preview", preview, source, period, fileName };
 }

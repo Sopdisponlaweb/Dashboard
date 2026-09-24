@@ -149,6 +149,8 @@ export type AffiliateFilters = {
   succession?: "all" | "pending" | "succeeded" | "successor";
   /** waiting: active and still in the waiting period · full: active with full coverage. */
   coverage?: "all" | "waiting" | "full";
+  /** risk: active titulars with two months without paying (the next one suspends them). */
+  arrears?: "all" | "risk";
   /** Affiliation date range [from, to), YYYY-MM-DD. */
   joinedFrom?: string;
   joinedTo?: string;
