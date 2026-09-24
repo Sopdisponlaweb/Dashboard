@@ -1,5 +1,5 @@
 export type CatalogFormState = {
-  status: "idle" | "error" | "unavailable" | "created";
+  status: "idle" | "error" | "unavailable" | "created" | "updated";
   message?: string;
 };
 

@@ -4,7 +4,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 
 import { demoAffiliates } from "./demo-data";
-import { demoReferenceDate, getCoverageState, getFullName } from "./format";
+import { demoReferenceDate, getCoverageState, getFullName, todayInBogota } from "./format";
 import type { Affiliate, AffiliateFilters, AffiliateStatus, AffiliationSource, Beneficiary, Credit, CreditInstallment, CreditStatus, MemberDocument, Payment, PaymentStatus } from "./types";
 
 function sizeLabel(bytes: number) {
@@ -40,7 +40,15 @@ function mapBeneficiaryRow(row: Record<string, unknown>): Beneficiary {
     successorBank: (row.successor_bank as string | null) ?? null,
     successorAccountNumber: (row.successor_account_number as string | null) ?? null,
     successorAccountType: (row.successor_account_type as Beneficiary["successorAccountType"]) ?? null,
+    inheritedFromAffiliateId: (row.inherited_from_affiliate_id as string | null) ?? null,
+    inheritedFromName: personNameOf(row.inherited_from),
+    promotedToAffiliateId: (row.promoted_to_affiliate_id as string | null) ?? null,
   };
+}
+
+function personNameOf(value: unknown) {
+  const person = value as { first_names?: string; last_names?: string } | null;
+  return person ? `${person.first_names ?? ""} ${person.last_names ?? ""}`.trim() || null : null;
 }
 
 function mapPaymentRow(row: Record<string, unknown>): Payment {
@@ -53,6 +61,9 @@ function mapPaymentRow(row: Record<string, unknown>): Payment {
     status: row.status as PaymentStatus,
     observation: (row.observations as string | null) ?? null,
     supportDocumentId: (row.support_document_id as string | null) ?? null,
+    paymentMethod: ((row.payment_method as { name?: string } | null)?.name) ?? null,
+    receiptId: (row.receipt_id as string | null) ?? null,
+    receiptNumber: ((row.receipt as { receipt_number?: number } | null)?.receipt_number) ?? null,
   };
 }
 
@@ -64,6 +75,9 @@ function mapInstallmentRow(row: Record<string, unknown>): CreditInstallment {
     capitalPortion: Number(row.capital_portion),
     interestPortion: Number(row.interest_portion),
     observation: (row.observation as string | null) ?? null,
+    paymentMethod: ((row.payment_method as { name?: string } | null)?.name) ?? null,
+    receiptNumber: (row.receipt_number as number | null) ?? null,
+    supportDocumentId: (row.support_document_id as string | null) ?? null,
   };
 }
 
@@ -84,6 +98,8 @@ function mapCreditRow(row: Record<string, unknown>): Credit {
     requestedOn: row.requested_on as string,
     observations: (row.observations as string | null) ?? null,
     installments: ((row.credit_installments as Record<string, unknown>[] | null) ?? []).map(mapInstallmentRow),
+    inheritedFromAffiliateId: (row.inherited_from_affiliate_id as string | null) ?? null,
+    inheritedFromName: personNameOf(row.inherited_from),
   };
 }
 
@@ -96,6 +112,14 @@ function mapDocumentRow(row: Record<string, unknown>): MemberDocument {
     sizeLabel: sizeLabel(Number(row.size_bytes ?? 0)),
     storagePath: row.storage_path as string,
   };
+}
+
+type SuccessionLink = { id: string; annulled_at: string | null };
+
+function successionRoleOf(row: Record<string, unknown>): Affiliate["successionRole"] {
+  const current = (value: unknown) => ((value as SuccessionLink[] | null) ?? []).some((link) => !link.annulled_at);
+  if (row.status === "deceased") return current(row.succession_as_deceased) ? "succeeded" : "pending";
+  return current(row.succession_as_successor) ? "successor" : null;
 }
 
 function mapAffiliateRow(row: Record<string, unknown>): Affiliate {
@@ -140,6 +164,7 @@ function mapAffiliateRow(row: Record<string, unknown>): Affiliate {
     successorAccountType: (row.successor_account_type as Affiliate["successorAccountType"]) ?? null,
     policeRankId: (row.police_rank_id as string | null) ?? null,
     policeRank: policeRank ? (policeRank.abbreviation ? `${policeRank.name} (${policeRank.abbreviation})` : policeRank.name) : null,
+    successionRole: successionRoleOf(row),
     beneficiaries: ((row.beneficiaries as Record<string, unknown>[] | null) ?? []).map(mapBeneficiaryRow),
     payments: ((row.payments as Record<string, unknown>[] | null) ?? []).map(mapPaymentRow),
     documents: ((row.member_documents as Record<string, unknown>[] | null) ?? []).map(mapDocumentRow),
@@ -160,18 +185,25 @@ const affiliateSelect = `
   death_municipality:municipalities!death_municipality_id(name, department),
   organization:organizations(name),
   police_rank:police_ranks(name, abbreviation),
-  beneficiaries(id, relationship, document_type, document_number, document_issued_on,
+  succession_as_deceased:affiliate_successions!affiliate_successions_deceased_affiliate_id_fkey(id, annulled_at),
+  succession_as_successor:affiliate_successions!affiliate_successions_successor_affiliate_id_fkey(id, annulled_at),
+  beneficiaries!beneficiaries_affiliate_id_fkey(id, relationship, document_type, document_number, document_issued_on,
     first_names, last_names, birth_date, phone, email, status, joined_on,
     full_coverage_on, deceased_at, internal_notes,
     death_municipality_id, death_registry_number, death_notary, death_service_provided,
     death_service_amount, successor_bank, successor_account_number, successor_account_type,
+    inherited_from_affiliate_id, promoted_to_affiliate_id,
+    inherited_from:affiliates!beneficiaries_inherited_from_affiliate_id_fkey(first_names, last_names),
     death_municipality:municipalities!death_municipality_id(name, department)),
-  payments(id, period_start, paid_on, amount, source, status, observations, support_document_id),
+  payments(id, period_start, paid_on, amount, source, status, observations, support_document_id, receipt_id,
+    payment_method:payment_methods(name), receipt:payment_receipts(receipt_number)),
   member_documents(id, kind, title, uploaded_at, size_bytes, storage_path),
-  credits(id, previous_credit_id, disbursed_amount, rolled_over_capital, rolled_over_interest,
+  credits!credits_affiliate_id_fkey(id, previous_credit_id, disbursed_amount, rolled_over_capital, rolled_over_interest,
     principal_base, interest_rate, term_months, interest_amount, total_amount, installment_amount,
-    status, requested_on, observations,
-    credit_installments(id, paid_on, amount, capital_portion, interest_portion, observation))
+    status, requested_on, observations, inherited_from_affiliate_id,
+    inherited_from:affiliates!credits_inherited_from_affiliate_id_fkey(first_names, last_names),
+    credit_installments(id, paid_on, amount, capital_portion, interest_portion, observation,
+      receipt_number, support_document_id, payment_method:payment_methods(name)))
 `;
 
 const PAGE_SIZE = 20000;
@@ -236,8 +268,22 @@ const affiliateListSelect = `
   last_payment_on, deceased_at, internal_notes,
   municipality:municipalities!municipality_id(name, department),
   organization:organizations(name),
-  beneficiaries(id, status)
+  succession_as_deceased:affiliate_successions!affiliate_successions_deceased_affiliate_id_fkey(id, annulled_at),
+  succession_as_successor:affiliate_successions!affiliate_successions_successor_affiliate_id_fkey(id, annulled_at),
+  beneficiaries!beneficiaries_affiliate_id_fkey(id, status)
 `;
+
+/**
+ * waiting: active and still inside the 6-month waiting period (carencia) · full: active with full coverage.
+ * Works for titulars and beneficiaries; a joined date in the future is bad data, not a waiting period.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyCoverageFilter<Q extends { eq: any; gt: any; lte: any }>(q: Q, coverage: AffiliateFilters["coverage"] = "all"): Q {
+  const today = todayInBogota();
+  if (coverage === "waiting") return q.eq("status", "active").gt("full_coverage_on", today).lte("joined_on", today);
+  if (coverage === "full") return q.eq("status", "active").lte("full_coverage_on", today);
+  return q;
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applyAffiliateFilters(query: any, filters: AffiliateFilters): any {
@@ -246,6 +292,16 @@ function applyAffiliateFilters(query: any, filters: AffiliateFilters): any {
   if (status !== "all") q = q.eq("status", status);
   else if (excludeDeceased) q = q.neq("status", "deceased");
   if (source !== "all") q = q.eq("source", source);
+  // Succession filters work on the embedded successions, narrowed to current (not annulled) ones.
+  if (filters.succession === "pending") {
+    q = q.eq("status", "deceased").is("succession_as_deceased.annulled_at", null).is("succession_as_deceased", null);
+  } else if (filters.succession === "succeeded") {
+    q = q.eq("status", "deceased").is("succession_as_deceased.annulled_at", null).not("succession_as_deceased", "is", null);
+  } else if (filters.succession === "successor") {
+    q = q.is("succession_as_successor.annulled_at", null).not("succession_as_successor", "is", null);
+  }
+  // A future affiliation date is bad migrated data, not a waiting period.
+  q = applyCoverageFilter(q, filters.coverage);
   if (search.trim()) {
     const like = `%${search.trim()}%`;
     q = q.or(`first_names.ilike.${like},last_names.ilike.${like},document_number.ilike.${like}`);
@@ -311,7 +367,11 @@ export async function countAffiliates(filters: AffiliateFilters = {}): Promise<n
 
   const supabase = await createClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let dbQuery: any = supabase.from("affiliates").select("id", { count: "exact", head: true });
+  let dbQuery: any = supabase
+    .from("affiliates")
+    .select(`id,
+      succession_as_deceased:affiliate_successions!affiliate_successions_deceased_affiliate_id_fkey(id, annulled_at),
+      succession_as_successor:affiliate_successions!affiliate_successions_successor_affiliate_id_fkey(id, annulled_at)`, { count: "exact", head: true });
   dbQuery = applyAffiliateFilters(dbQuery, filters);
 
   const { count, error } = await dbQuery;
@@ -385,7 +445,8 @@ function mapPaymentListRow(row: Record<string, unknown>): PaymentRecord {
 }
 
 const paymentListSelect = `
-  id, period_start, paid_on, amount, source, status, observations, support_document_id,
+  id, period_start, paid_on, amount, source, status, observations, support_document_id, receipt_id,
+  payment_method:payment_methods(name), receipt:payment_receipts(receipt_number),
   affiliate:affiliates!inner(id, first_names, last_names, document_type, document_number)
 `;
 
@@ -530,8 +591,9 @@ const creditListSelect = `
   id, previous_credit_id, disbursed_amount, rolled_over_capital, rolled_over_interest,
   principal_base, interest_rate, term_months, interest_amount, total_amount, installment_amount,
   status, requested_on, observations,
-  credit_installments(id, paid_on, amount, capital_portion, interest_portion, observation),
-  affiliate:affiliates!inner(id, first_names, last_names, document_type, document_number)
+  credit_installments(id, paid_on, amount, capital_portion, interest_portion, observation,
+      receipt_number, support_document_id, payment_method:payment_methods(name)),
+  affiliate:affiliates!credits_affiliate_id_fkey!inner(id, first_names, last_names, document_type, document_number)
 `;
 
 async function allCreditRecords(): Promise<CreditRecord[]> {
@@ -606,7 +668,7 @@ export async function countCredits(filters: CreditFilters = {}): Promise<number>
   const supabase = await createClient();
   let q = supabase
     .from("credits")
-    .select("id, affiliates!inner(first_names,last_names,document_number)", { count: "exact", head: true });
+    .select("id, affiliates!credits_affiliate_id_fkey!inner(first_names,last_names,document_number)", { count: "exact", head: true });
 
   if (status !== "all") q = q.eq("status", status);
   if (query.trim()) {
@@ -728,6 +790,7 @@ export type BeneficiaryDirectoryFilters = {
   query?: string;
   status?: AffiliateStatus | "all";
   excludeDeceased?: boolean;
+  coverage?: AffiliateFilters["coverage"];
   page?: number;
   pageSize?: number;
 };
@@ -745,11 +808,13 @@ function mapBeneficiaryListRow(row: Record<string, unknown>): BeneficiaryRecord 
 const beneficiaryListSelect = `
   id, relationship, document_type, document_number, document_issued_on, first_names, last_names,
   birth_date, phone, email, status, joined_on, full_coverage_on, deceased_at, internal_notes,
-  affiliate:affiliates!inner(id, first_names, last_names, document_type, document_number)
+  inherited_from_affiliate_id, promoted_to_affiliate_id,
+  inherited_from:affiliates!beneficiaries_inherited_from_affiliate_id_fkey(first_names, last_names),
+  affiliate:affiliates!beneficiaries_affiliate_id_fkey!inner(id, first_names, last_names, document_type, document_number)
 `;
 
 export async function listBeneficiaries(filters: BeneficiaryDirectoryFilters = {}): Promise<BeneficiaryRecord[]> {
-  const { query = "", status = "all", excludeDeceased = false, page, pageSize } = filters;
+  const { query = "", status = "all", excludeDeceased = false, coverage = "all", page, pageSize } = filters;
 
   if (!isSupabaseConfigured()) {
     const affiliates = await getAllAffiliates();
@@ -765,8 +830,9 @@ export async function listBeneficiaries(filters: BeneficiaryDirectoryFilters = {
         const queryMatches = !query || normalize(`${record.firstNames} ${record.lastNames} ${record.documentNumber ?? ""} ${record.affiliateName}`).includes(normalize(query));
         const statusMatches = status === "all" || record.status === status;
         const deceasedMatches = status !== "all" || !excludeDeceased || record.status !== "deceased";
+        const coverageMatches = coverage === "all" || getCoverageState(record) === coverage;
 
-        return queryMatches && statusMatches && deceasedMatches;
+        return queryMatches && statusMatches && deceasedMatches && coverageMatches;
       })
       .sort((a, b) => (a.lastNames < b.lastNames ? -1 : 1));
   }
@@ -778,6 +844,9 @@ export async function listBeneficiaries(filters: BeneficiaryDirectoryFilters = {
     let q: any = supabase.from("beneficiaries").select(beneficiaryListSelect).order("last_names", { ascending: true });
     if (status !== "all") q = q.eq("status", status);
     else if (excludeDeceased) q = q.neq("status", "deceased");
+    // A beneficiary promoted to titular by a succession is counted as titular now.
+    if (excludeDeceased) q = q.is("promoted_to_affiliate_id", null);
+    q = applyCoverageFilter(q, coverage);
     if (query.trim()) {
       const like = `%${query.trim()}%`;
       q = q.or(`first_names.ilike.${like},last_names.ilike.${like},document_number.ilike.${like}`);
@@ -807,7 +876,7 @@ export async function listBeneficiaries(filters: BeneficiaryDirectoryFilters = {
 }
 
 export async function countBeneficiaries(filters: BeneficiaryDirectoryFilters = {}): Promise<number> {
-  const { query = "", status = "all", excludeDeceased = false } = filters;
+  const { query = "", status = "all", excludeDeceased = false, coverage = "all" } = filters;
 
   if (!isSupabaseConfigured()) {
     return (await listBeneficiaries(filters)).length;
@@ -816,10 +885,12 @@ export async function countBeneficiaries(filters: BeneficiaryDirectoryFilters = 
   const supabase = await createClient();
   let q = supabase
     .from("beneficiaries")
-    .select("id, affiliates!inner(first_names,last_names,document_number)", { count: "exact", head: true });
+    .select("id, affiliates!beneficiaries_affiliate_id_fkey!inner(first_names,last_names,document_number)", { count: "exact", head: true });
 
   if (status !== "all") q = q.eq("status", status);
   else if (excludeDeceased) q = q.neq("status", "deceased");
+  if (excludeDeceased) q = q.is("promoted_to_affiliate_id", null);
+  q = applyCoverageFilter(q, coverage);
   if (query.trim()) {
     const like = `%${query.trim()}%`;
     q = q.or(`first_names.ilike.${like},last_names.ilike.${like},document_number.ilike.${like}`);
@@ -833,6 +904,8 @@ export async function countBeneficiaries(filters: BeneficiaryDirectoryFilters = 
 export type DashboardSummary = {
   operationalTotal: number;
   holderStatusCounts: Record<AffiliateStatus, number>;
+  /** Deceased titulars without a current succession (Supabase only). */
+  pendingSuccessionCount?: number;
   waitingCoverageCount: number;
   upcomingCoverageCount: number;
   beneficiaryStatusCounts: Record<AffiliateStatus, number>;

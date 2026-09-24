@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { StatusBadge } from "@/features/affiliates/affiliate-badges";
-import { formatDate, getFullName, getInitials } from "@/features/affiliates/format";
-import { countBeneficiaries, getDashboardSummary, listBeneficiaries } from "@/features/affiliates/repository";
+import { CoverageBadge, StatusBadge } from "@/features/affiliates/affiliate-badges";
+import { affiliateStatuses, formatDate, getCoverageState, getFullName, getInitials, statusPluralLabels } from "@/features/affiliates/format";
+import { countBeneficiaries, getDashboardSummary, listBeneficiaries, type BeneficiaryDirectoryFilters } from "@/features/affiliates/repository";
 import type { AffiliateStatus } from "@/features/affiliates/types";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
@@ -16,7 +16,14 @@ export const metadata: Metadata = { title: "Beneficiarios" };
 const validStatuses = new Set<AffiliateStatus>(["active", "inactive", "suspended", "deceased"]);
 const PAGE_SIZE = 50;
 
-type SearchParams = Promise<{ q?: string | string[]; status?: string | string[]; page?: string | string[] }>;
+type SearchParams = Promise<{ q?: string | string[]; status?: string | string[]; carencia?: string | string[]; page?: string | string[] }>;
+
+// Same URL slugs as the Afiliados filter.
+const coverageFilters = {
+  "en-carencia": "waiting",
+  "cobertura-completa": "full",
+} as const;
+type CoverageSlug = keyof typeof coverageFilters;
 
 function firstValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -30,10 +37,14 @@ export default async function BeneficiariesPage({ searchParams }: { searchParams
   const status = validStatuses.has(rawStatus as AffiliateStatus) ? (rawStatus as AffiliateStatus) : "all";
   const effectiveStatus = rawStatus === "operational" ? "all" : status;
   const excludeDeceased = rawStatus === "operational";
+  const rawCoverage = firstValue(params.carencia) ?? "todos";
+  const coverageSlug = rawCoverage in coverageFilters ? (rawCoverage as CoverageSlug) : null;
+  const coverage = coverageSlug ? coverageFilters[coverageSlug] : "all";
+  const filters: BeneficiaryDirectoryFilters = { query, status: effectiveStatus, excludeDeceased, coverage };
 
   const [beneficiaries, totalCount, summary] = await Promise.all([
-    listBeneficiaries({ query, status: effectiveStatus, excludeDeceased, page, pageSize: PAGE_SIZE }),
-    countBeneficiaries({ query, status: effectiveStatus, excludeDeceased }),
+    listBeneficiaries({ ...filters, page, pageSize: PAGE_SIZE }),
+    countBeneficiaries(filters),
     getDashboardSummary(),
   ]);
 
@@ -58,7 +69,7 @@ export default async function BeneficiariesPage({ searchParams }: { searchParams
 
       <section className="directory-summary" aria-label="Resumen de beneficiarios">
         <article><span>Activos</span><strong>{totals.active.toLocaleString("es-CO")}</strong></article>
-        <article className="summary-waiting"><span>Inactivos / suspendidos</span><strong>{totals.inactive.toLocaleString("es-CO")}</strong></article>
+        <article className="summary-waiting"><span>Suspendidos / retirados</span><strong>{totals.inactive.toLocaleString("es-CO")}</strong></article>
         <article className="summary-history"><span>Histórico fallecidos</span><strong>{totals.deceased.toLocaleString("es-CO")}</strong></article>
         <article><span>Total</span><strong>{totals.total.toLocaleString("es-CO")}</strong></article>
       </section>
@@ -80,11 +91,16 @@ export default async function BeneficiariesPage({ searchParams }: { searchParams
             <span>Estado</span>
             <select name="status" defaultValue={rawStatus}>
               <option value="operational">Vista operativa</option>
-              <option value="active">Activos</option>
-              <option value="inactive">Inactivos</option>
-              <option value="suspended">Suspendidos</option>
-              <option value="deceased">Fallecidos · histórico</option>
+              {affiliateStatuses.map((value) => <option key={value} value={value}>{statusPluralLabels[value]}{value === "deceased" ? " · histórico" : ""}</option>)}
               <option value="all">Todos</option>
+            </select>
+          </label>
+          <label>
+            <span>Carencia</span>
+            <select name="carencia" defaultValue={coverageSlug ?? "todos"}>
+              <option value="todos">Todos</option>
+              <option value="en-carencia">En carencia (primeros 6 meses)</option>
+              <option value="cobertura-completa">Cobertura completa</option>
             </select>
           </label>
           <button className="primary-button" type="submit">Aplicar filtros</button>
@@ -96,19 +112,27 @@ export default async function BeneficiariesPage({ searchParams }: { searchParams
             <table className="data-table">
               <thead><tr><th>Beneficiario</th><th>Documento</th><th>Parentesco</th><th>Titular</th><th>Estado</th><th>Vinculación</th><th><span className="sr-only">Acciones</span></th></tr></thead>
               <tbody>
-                {beneficiaries.map((beneficiary) => (
-                  <tr key={beneficiary.id}>
-                    <td>
-                      <div className="person-cell"><span className="person-initials">{getInitials(beneficiary)}</span><span><strong>{getFullName(beneficiary)}</strong></span></div>
-                    </td>
-                    <td><span className="mono-value">{beneficiary.documentNumber ?? "Sin registrar"}</span></td>
-                    <td>{beneficiary.relationship}</td>
-                    <td><Link className="row-action" href={`/afiliados/${beneficiary.affiliateId}`}>{beneficiary.affiliateName}</Link></td>
-                    <td><StatusBadge status={beneficiary.status} /></td>
-                    <td>{formatDate(beneficiary.joinedOn)}</td>
-                    <td>{beneficiary.status !== "deceased" ? <Link className="row-action" href={`/afiliados/${beneficiary.affiliateId}/beneficiarios/${beneficiary.id}/editar`}>Editar <Icon name="arrow" size={15} /></Link> : null}</td>
-                  </tr>
-                ))}
+                {beneficiaries.map((beneficiary) => {
+                  const waiting = getCoverageState(beneficiary) === "waiting";
+                  return (
+                    <tr key={beneficiary.id} className={waiting ? "is-waiting" : undefined}>
+                      <td>
+                        <div className="person-cell"><span className="person-initials">{getInitials(beneficiary)}</span><span><strong>{getFullName(beneficiary)}</strong>{waiting ? <em>Vinculación nueva</em> : null}</span></div>
+                      </td>
+                      <td><span className="mono-value">{beneficiary.documentNumber ?? "Sin registrar"}</span></td>
+                      <td>{beneficiary.relationship}</td>
+                      <td className="is-wrap titular-cell"><Link className="row-action" href={`/afiliados/${beneficiary.affiliateId}`}>{beneficiary.affiliateName}</Link></td>
+                      <td>
+                        <div className="status-stack">
+                          <StatusBadge status={beneficiary.status} />
+                          <CoverageBadge status={beneficiary.status} fullCoverageOn={beneficiary.fullCoverageOn} />
+                        </div>
+                      </td>
+                      <td>{formatDate(beneficiary.joinedOn)}</td>
+                      <td>{beneficiary.status !== "deceased" ? <Link className="row-action" href={`/afiliados/${beneficiary.affiliateId}/beneficiarios/${beneficiary.id}/editar`}>Editar <Icon name="arrow" size={15} /></Link> : null}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -121,7 +145,7 @@ export default async function BeneficiariesPage({ searchParams }: { searchParams
           pageSize={PAGE_SIZE}
           totalCount={totalCount}
           basePath="/beneficiarios"
-          searchParams={{ q: query, status: rawStatus }}
+          searchParams={{ q: query, status: rawStatus, ...(coverageSlug ? { carencia: coverageSlug } : {}) }}
         />
       </section>
     </>

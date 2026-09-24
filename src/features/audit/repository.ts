@@ -16,6 +16,11 @@ export const auditTableLabels: Record<string, string> = {
   credit_installments: "Abonos de crédito",
   ai_extractions: "Extracciones IA",
   mcp_write_proposals: "Propuestas del asistente",
+  payment_receipts: "Recibos de pago",
+  payment_methods: "Métodos de pago",
+  municipalities: "Municipios",
+  organizations: "Entidades",
+  police_ranks: "Rangos de policía",
 };
 
 export type AuditEvent = {
@@ -125,6 +130,9 @@ const recordHistoryIgnoredFields = new Set([
   "created_at",
   "updated_at",
   "full_coverage_on",
+  "inherited_from_affiliate_id",
+  "promoted_to_affiliate_id",
+  "succession_id",
 ]);
 
 const recordHistoryCommonLabels: Record<string, string> = {
@@ -156,7 +164,8 @@ const recordHistoryFieldLabelsByTable: Record<"affiliates" | "beneficiaries", Re
     address: "Dirección",
     municipality_id: "Municipio",
     organization_id: "Entidad",
-    source: "Fuente de afiliación",
+    police_rank_id: "Rango de policía",
+    source: "Tipo de afiliación",
     last_payment_on: "Último pago",
     successor_resolution_number: "N.º de resolución",
     successor_document_number: "Documento del sucesor",
@@ -185,11 +194,13 @@ const recordHistoryDateFormatter = new Intl.DateTimeFormat("es-CO", {
   timeZone: "UTC",
 });
 
-function formatRecordHistoryValue(
-  field: string,
-  value: unknown,
-  lookups: { municipalities: Map<string, string>; organizations: Map<string, string> },
-): string {
+export type HistoryLookups = {
+  municipalities: Map<string, string>;
+  organizations: Map<string, string>;
+  policeRanks?: Map<string, string>;
+};
+
+function formatRecordHistoryValue(field: string, value: unknown, lookups: HistoryLookups): string {
   if (value === null || value === undefined || value === "") return "Sin registrar";
 
   if (recordHistoryDateFields.has(field)) {
@@ -211,16 +222,19 @@ function formatRecordHistoryValue(
   if (field === "organization_id") {
     return lookups.organizations.get(String(value)) ?? String(value);
   }
+  if (field === "police_rank_id") {
+    return lookups.policeRanks?.get(String(value)) ?? String(value);
+  }
   if (typeof value === "boolean") return value ? "Sí" : "No";
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
 
-function diffRecordHistoryRow(
+export function diffRecordHistoryRow(
   tableName: "affiliates" | "beneficiaries",
   before: Record<string, unknown>,
   after: Record<string, unknown>,
-  lookups: { municipalities: Map<string, string>; organizations: Map<string, string> },
+  lookups: HistoryLookups,
 ): RecordChange[] {
   const labels = recordHistoryFieldLabelsByTable[tableName];
   const keys = new Set([...Object.keys(before), ...Object.keys(after)]);

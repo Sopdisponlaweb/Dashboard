@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { formatCurrency, formatDate } from "./lib/format.js";
+import { formatCurrency, formatDate, membershipStatusLabels, sourceLabel, statusLabel } from "./lib/format.js";
 import { getAuthenticatedClient } from "./lib/supabase.js";
 
 const affiliateSummarySelect =
@@ -13,8 +13,8 @@ function summarizeAffiliateRow(row: Record<string, unknown>) {
     id: row.id,
     nombre: `${row.first_names} ${row.last_names}`,
     documento: `${row.document_type} ${row.document_number}`,
-    estado: row.status,
-    tipoAfiliacion: row.source,
+    estado: statusLabel(row.status),
+    tipoAfiliacion: sourceLabel(row.source),
     municipio: municipality ? `${municipality.name}, ${municipality.department}` : "Sin registrar",
     ultimoPago: formatDate(row.last_payment_on as string | null),
   };
@@ -64,9 +64,9 @@ export function registerReadTools(server: McpServer) {
           id, document_type, document_number, first_names, last_names, status, source, joined_on, full_coverage_on, last_payment_on,
           municipality:municipalities!municipality_id(name, department),
           organization:organizations(name),
-          beneficiaries(id, first_names, last_names, relationship, status),
+          beneficiaries!beneficiaries_affiliate_id_fkey(id, first_names, last_names, relationship, status),
           payments(period_start, paid_on, amount, source, status, observations),
-          credits(id, status, principal_base, total_amount, installment_amount, requested_on),
+          credits!credits_affiliate_id_fkey(id, status, principal_base, total_amount, installment_amount, requested_on),
           member_documents(title)
         `)
         .eq("id", affiliateId)
@@ -84,15 +84,15 @@ export function registerReadTools(server: McpServer) {
           periodo: String(payment.period_start).slice(0, 7),
           valor: formatCurrency(payment.amount as number),
           estado: payment.status,
-          fuente: payment.source,
+          fuente: sourceLabel(payment.source),
         }));
 
       const output = {
         id: affiliate.id,
         nombre: `${affiliate.first_names} ${affiliate.last_names}`,
         documento: `${affiliate.document_type} ${affiliate.document_number}`,
-        estado: affiliate.status,
-        tipoAfiliacion: affiliate.source,
+        estado: statusLabel(affiliate.status),
+        tipoAfiliacion: sourceLabel(affiliate.source),
         entidad: organization?.name ?? "Particular",
         municipio: municipality ? `${municipality.name}, ${municipality.department}` : "Sin registrar",
         fechaAfiliacion: formatDate(affiliate.joined_on as string),
@@ -100,7 +100,7 @@ export function registerReadTools(server: McpServer) {
         ultimoPago: formatDate(affiliate.last_payment_on as string | null),
         beneficiariosVigentes: ((affiliate.beneficiaries as Record<string, unknown>[]) ?? [])
           .filter((b) => b.status !== "deceased")
-          .map((b) => ({ nombre: `${b.first_names} ${b.last_names}`, parentesco: b.relationship, estado: b.status })),
+          .map((b) => ({ nombre: `${b.first_names} ${b.last_names}`, parentesco: b.relationship, estado: statusLabel(b.status) })),
         pagosRecientes: payments,
         creditos: ((affiliate.credits as Record<string, unknown>[]) ?? []).map((c) => ({
           id: c.id,
@@ -122,7 +122,7 @@ export function registerReadTools(server: McpServer) {
     {
       title: "Resumen general de la operación",
       description:
-        "Indicadores generales de Sopdisponal: totales de titulares activos/en carencia/inactivos/suspendidos por mora, beneficiarios, recaudo mensual reciente, distribución por tipo de afiliación y alertas de mora. Solo lectura.",
+        "Indicadores generales de Sopdisponal: totales de titulares activos, en carencia, suspendidos (3 a 5 meses de mora) y retirados (6 meses o más), beneficiarios, recaudo mensual reciente, distribución por tipo de afiliación y alertas de mora. Los conteos usan claves internas: inactive = Suspendido, suspended = Retirado. Solo lectura.",
       inputSchema: {},
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
@@ -130,7 +130,7 @@ export function registerReadTools(server: McpServer) {
       const { supabase } = await getAuthenticatedClient();
       const { data, error } = await supabase.rpc("get_dashboard_summary");
       if (error) return { content: [{ type: "text", text: `Error al calcular el resumen: ${error.message}` }] };
-      return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+      return { content: [{ type: "text", text: JSON.stringify({ ...data, nombresDeEstado: membershipStatusLabels }, null, 2) }] };
     },
   );
 

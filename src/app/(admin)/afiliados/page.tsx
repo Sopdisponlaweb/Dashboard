@@ -5,9 +5,9 @@ import { DataSourceBadge } from "@/components/data-source-badge";
 import { Icon } from "@/components/icons";
 import { Pagination } from "@/components/pagination";
 import { CoverageBadge, StatusBadge } from "@/features/affiliates/affiliate-badges";
-import { formatDate, getCoverageState, getFullName, sourceLabels } from "@/features/affiliates/format";
+import { affiliateStatuses, affiliationSources, formatDate, getCoverageState, getFullName, sourceLabels, statusPluralLabels } from "@/features/affiliates/format";
 import { countAffiliates, getDashboardSummary, listAffiliates } from "@/features/affiliates/repository";
-import type { AffiliateStatus, AffiliationSource } from "@/features/affiliates/types";
+import type { AffiliateFilters, AffiliateStatus, AffiliationSource } from "@/features/affiliates/types";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 export const metadata: Metadata = { title: "Afiliados" };
@@ -20,9 +20,24 @@ type SearchParams = Promise<{
   q?: string | string[];
   status?: string | string[];
   source?: string | string[];
+  sucesion?: string | string[];
+  carencia?: string | string[];
   result?: string | string[];
   page?: string | string[];
 }>;
+
+// URL value → repository filter. Spanish slugs keep links readable and shareable.
+const successionFilters = {
+  pendiente: "pending",
+  sucedidos: "succeeded",
+  sucesores: "successor",
+} as const;
+const coverageFilters = {
+  "en-carencia": "waiting",
+  "cobertura-completa": "full",
+} as const;
+type SuccessionSlug = keyof typeof successionFilters;
+type CoverageSlug = keyof typeof coverageFilters;
 
 function firstValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -38,12 +53,25 @@ export default async function AffiliatesPage({ searchParams }: { searchParams: S
   const status = validStatuses.has(rawStatus as AffiliateStatus) ? rawStatus as AffiliateStatus : "all";
   const source = validSources.has(rawSource as AffiliationSource) ? rawSource as AffiliationSource : "all";
 
-  const effectiveStatus = rawStatus === "operational" ? "all" : status;
-  const excludeDeceased = rawStatus === "operational";
+  // Older links used status=sucesion-pendiente; they now map to the succession filter.
+  const legacyPending = rawStatus === "sucesion-pendiente";
+  const rawSuccession = legacyPending ? "pendiente" : firstValue(params.sucesion) ?? "todas";
+  const successionSlug = rawSuccession in successionFilters ? (rawSuccession as SuccessionSlug) : null;
+  const succession = successionSlug ? successionFilters[successionSlug] : "all";
+  const rawCoverage = firstValue(params.carencia) ?? "todos";
+  const coverageSlug = rawCoverage in coverageFilters ? (rawCoverage as CoverageSlug) : null;
+  const coverage = coverageSlug ? coverageFilters[coverageSlug] : "all";
+
+  // Pending/succeeded successions are about deceased titulars, which the operational view hides.
+  const needsDeceased = succession === "pending" || succession === "succeeded";
+  const statusValue = legacyPending ? "operational" : rawStatus;
+  const effectiveStatus = statusValue === "operational" ? "all" : status;
+  const excludeDeceased = statusValue === "operational" && !needsDeceased;
+  const filters: AffiliateFilters = { query, status: effectiveStatus, source, excludeDeceased, succession, coverage };
 
   const [affiliatesResult, totalCount, summary] = await Promise.all([
-    listAffiliates({ query, status: effectiveStatus, source, excludeDeceased, page, pageSize: PAGE_SIZE }),
-    countAffiliates({ query, status: effectiveStatus, source, excludeDeceased }),
+    listAffiliates({ ...filters, page, pageSize: PAGE_SIZE }),
+    countAffiliates(filters),
     getDashboardSummary(),
   ]);
 
@@ -78,7 +106,7 @@ export default async function AffiliatesPage({ searchParams }: { searchParams: S
       <section className="directory-summary" aria-label="Resumen de afiliados">
         <article><span>Activos</span><strong>{totals.active.toLocaleString("es-CO")}</strong></article>
         <article className="summary-waiting"><span>En carencia</span><strong>{totals.waiting.toLocaleString("es-CO")}</strong></article>
-        <article><span>Inactivos</span><strong>{totals.inactive.toLocaleString("es-CO")}</strong></article>
+        <article><span>Suspendidos</span><strong>{totals.inactive.toLocaleString("es-CO")}</strong></article>
         <article className="summary-history"><span>Histórico fallecidos</span><strong>{totals.historical.toLocaleString("es-CO")}</strong></article>
       </section>
 
@@ -101,12 +129,9 @@ export default async function AffiliatesPage({ searchParams }: { searchParams: S
           </label>
           <label>
             <span>Estado</span>
-            <select name="status" defaultValue={rawStatus}>
+            <select name="status" defaultValue={statusValue}>
               <option value="operational">Vista operativa</option>
-              <option value="active">Activos</option>
-              <option value="inactive">Inactivos</option>
-              <option value="suspended">Suspendidos</option>
-              <option value="deceased">Fallecidos · histórico</option>
+              {affiliateStatuses.map((value) => <option key={value} value={value}>{statusPluralLabels[value]}{value === "deceased" ? " · histórico" : ""}</option>)}
               <option value="all">Todos</option>
             </select>
           </label>
@@ -114,12 +139,24 @@ export default async function AffiliatesPage({ searchParams }: { searchParams: S
             <span>Tipo</span>
             <select name="source" defaultValue={source}>
               <option value="all">Todos</option>
-              <option value="activo">Activo</option>
-              <option value="casur">CASUR</option>
-              <option value="tegen">TEGEN</option>
-              <option value="particular">Particular</option>
-              <option value="inpec">INPEC</option>
-              <option value="ordisponal">ORDISPONAL</option>
+              {affiliationSources.map((value) => <option key={value} value={value}>{sourceLabels[value]}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Sucesión</span>
+            <select name="sucesion" defaultValue={successionSlug ?? "todas"}>
+              <option value="todas">Todas</option>
+              <option value="pendiente">Sucesión pendiente</option>
+              <option value="sucedidos">Sucedidos</option>
+              <option value="sucesores">Titulares por sucesión</option>
+            </select>
+          </label>
+          <label>
+            <span>Carencia</span>
+            <select name="carencia" defaultValue={coverageSlug ?? "todos"}>
+              <option value="todos">Todos</option>
+              <option value="en-carencia">En carencia</option>
+              <option value="cobertura-completa">Cobertura completa</option>
             </select>
           </label>
           <button className="primary-button" type="submit">Aplicar filtros</button>
@@ -141,7 +178,15 @@ export default async function AffiliatesPage({ searchParams }: { searchParams: S
                       </td>
                       <td><span className="mono-value">{affiliate.documentType} {affiliate.documentNumber}</span></td>
                       <td><span className={`source-label source-${affiliate.source}`}>{sourceLabels[affiliate.source]}</span></td>
-                      <td><div className="status-stack"><StatusBadge status={affiliate.status} /><CoverageBadge status={affiliate.status} fullCoverageOn={affiliate.fullCoverageOn} /></div></td>
+                      <td>
+                        <div className="status-stack">
+                          <StatusBadge status={affiliate.status} />
+                          {affiliate.successionRole === "pending" ? <span className="succession-badge is-pending">Sucesión pendiente</span> : null}
+                          {affiliate.successionRole === "succeeded" ? <span className="succession-badge is-registered">Sucedido</span> : null}
+                          {affiliate.successionRole === "successor" ? <span className="succession-badge is-successor">Titular por sucesión</span> : null}
+                          <CoverageBadge status={affiliate.status} fullCoverageOn={affiliate.fullCoverageOn} />
+                        </div>
+                      </td>
                       <td>{formatDate(affiliate.lastPaymentOn)}</td>
                       <td><span className="mono-value">{activeBeneficiaries}</span></td>
                       <td><Link className="row-action" href={`/afiliados/${affiliate.id}`} aria-label={`Ver ficha de ${getFullName(affiliate)}`}>Ver ficha <Icon name="arrow" size={15} /></Link></td>
@@ -160,7 +205,13 @@ export default async function AffiliatesPage({ searchParams }: { searchParams: S
           pageSize={PAGE_SIZE}
           totalCount={totalCount}
           basePath="/afiliados"
-          searchParams={{ q: query, status: rawStatus, source }}
+          searchParams={{
+            q: query,
+            status: statusValue,
+            source,
+            ...(successionSlug ? { sucesion: successionSlug } : {}),
+            ...(coverageSlug ? { carencia: coverageSlug } : {}),
+          }}
         />
       </section>
     </>

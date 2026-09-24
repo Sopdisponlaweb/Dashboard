@@ -11,9 +11,12 @@ export type Payment = {
   status: PaymentStatus;
   observation: string | null;
   supportDocumentId?: string | null;
+  paymentMethod?: string | null;
+  receiptId?: string | null;
+  receiptNumber?: number | null;
 };
 
-export type CreditStatus = "active" | "paid" | "refinanced" | "cancelled";
+export type CreditStatus = "active" | "paid" | "refinanced" | "cancelled" | "paused" | "forgiven";
 
 export type CreditInstallment = {
   id: string;
@@ -22,6 +25,9 @@ export type CreditInstallment = {
   capitalPortion: number;
   interestPortion: number;
   observation: string | null;
+  paymentMethod?: string | null;
+  receiptNumber?: number | null;
+  supportDocumentId?: string | null;
 };
 
 export type Credit = {
@@ -40,6 +46,8 @@ export type Credit = {
   requestedOn: string;
   observations: string | null;
   installments: CreditInstallment[];
+  inheritedFromAffiliateId?: string | null;
+  inheritedFromName?: string | null;
 };
 
 export type MemberDocument = {
@@ -76,6 +84,11 @@ export type Beneficiary = {
   successorBank?: string | null;
   successorAccountNumber?: string | null;
   successorAccountType?: "ahorros" | "corriente" | null;
+  /** Set when the beneficiary came from a deceased titular through a succession. */
+  inheritedFromAffiliateId?: string | null;
+  inheritedFromName?: string | null;
+  /** Set on the deceased's record when this beneficiary became the successor titular. */
+  promotedToAffiliateId?: string | null;
 };
 
 export type Affiliate = {
@@ -118,6 +131,8 @@ export type Affiliate = {
   credits?: Credit[];
   policeRankId?: string | null;
   policeRank?: string | null;
+  /** pending: deceased without a current succession; succeeded: deceased with one; successor: titular by succession. */
+  successionRole?: "pending" | "succeeded" | "successor" | null;
 };
 
 export type AffiliateFilters = {
@@ -125,6 +140,10 @@ export type AffiliateFilters = {
   status?: AffiliateStatus | "all";
   source?: AffiliationSource | "all";
   excludeDeceased?: boolean;
+  /** pending: deceased without succession · succeeded: deceased with one · successor: titular by succession. */
+  succession?: "all" | "pending" | "succeeded" | "successor";
+  /** waiting: active and still in the waiting period · full: active with full coverage. */
+  coverage?: "all" | "waiting" | "full";
   page?: number;
   pageSize?: number;
 };

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { sourceUsesPoliceRank } from "./format";
+
 const isoDate = /^\d{4}-\d{2}-\d{2}$/;
 const documentTypes = ["CC", "CE", "TI"] as const;
 const affiliationSources = ["particular", "activo", "casur", "tegen", "inpec", "ordisponal"] as const;
@@ -92,6 +94,9 @@ export const affiliateFormSchema = z.object({
   }
   if (values.deceasedOn && values.deceasedOn > today) {
     context.addIssue({ code: "custom", path: ["deceasedOn"], message: "La fecha de fallecimiento no puede estar en el futuro." });
+  }
+  if (values.policeRankId && !sourceUsesPoliceRank(values.source)) {
+    context.addIssue({ code: "custom", path: ["policeRankId"], message: "El rango de policía solo aplica a PERSONAL ACTIVO, CASUR y TEGEN." });
   }
 });
 

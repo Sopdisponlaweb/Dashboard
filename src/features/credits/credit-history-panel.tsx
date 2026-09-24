@@ -1,29 +1,33 @@
+import Link from "next/link";
+
 import { Icon } from "@/components/icons";
-import { formatCurrency, formatDate } from "@/features/affiliates/format";
+import { creditStatusLabels, formatCreditReceiptNumber, formatCurrency, formatDate, formatRate } from "@/features/affiliates/format";
 import type { Credit } from "@/features/affiliates/types";
 
 import { remainingBalance } from "./calculations";
 
-export const creditStatusLabels: Record<Credit["status"], string> = {
-  active: "Activo",
-  paid: "Pagado",
-  refinanced: "Refinanciado",
-  cancelled: "Cancelado",
-};
-
-function formatRate(rate: number) {
-  return `${(rate * 100).toLocaleString("es-CO", { maximumFractionDigits: 2 })}%`;
+function StatementLink({ affiliateId, creditId }: { affiliateId: string; creditId: string }) {
+  return (
+    <Link className="panel-link" href={`/afiliados/${affiliateId}/creditos/${creditId}/estado-de-cuenta`} target="_blank">
+      <Icon name="file" size={14} /> Estado de cuenta PDF
+    </Link>
+  );
 }
 
-function ActiveCreditCard({ credit }: { credit: Credit }) {
+function ActiveCreditCard({ credit, affiliateId }: { credit: Credit; affiliateId: string }) {
   const balance = remainingBalance(credit, credit.installments);
+  const installments = [...credit.installments].sort((a, b) => b.paidOn.localeCompare(a.paidOn) || (b.receiptNumber ?? 0) - (a.receiptNumber ?? 0));
   const hasRollover = credit.rolledOverCapital > 0 || credit.rolledOverInterest > 0;
 
   return (
     <div className="active-credit-card">
       <div className="active-credit-head">
         <span className={`payment-badge credit-${credit.status}`}>{creditStatusLabels[credit.status]}</span>
+        {credit.inheritedFromAffiliateId ? (
+          <span className="inherited-tag">Heredado de <Link href={`/afiliados/${credit.inheritedFromAffiliateId}`}>{credit.inheritedFromName ?? "titular fallecido"}</Link></span>
+        ) : null}
         <span>Solicitado {formatDate(credit.requestedOn)} · {credit.termMonths} meses · {formatRate(credit.interestRate)}</span>
+        <StatementLink affiliateId={affiliateId} creditId={credit.id} />
       </div>
 
       {hasRollover ? (
@@ -45,18 +49,29 @@ function ActiveCreditCard({ credit }: { credit: Credit }) {
         <div className="detail-span"><dt>Saldo total pendiente</dt><dd><strong>{formatCurrency(balance.remainingTotal)}</strong></dd></div>
       </dl>
 
-      {credit.installments.length ? (
+      {installments.length ? (
         <div className="data-table-wrap">
           <table className="data-table compact-table">
-            <thead><tr><th>Fecha</th><th>Valor</th><th>Capital</th><th>Interés</th><th>Observación</th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Valor</th><th>Capital</th><th>Interés</th><th>Método</th><th>Observación</th><th>Soporte</th><th>Recibo</th></tr></thead>
             <tbody>
-              {credit.installments.map((installment) => (
+              {installments.map((installment) => (
                 <tr key={installment.id}>
                   <td>{formatDate(installment.paidOn)}</td>
                   <td className="mono-value">{formatCurrency(installment.amount)}</td>
                   <td className="mono-value">{formatCurrency(installment.capitalPortion)}</td>
                   <td className="mono-value">{formatCurrency(installment.interestPortion)}</td>
+                  <td>{installment.paymentMethod ?? "—"}</td>
                   <td>{installment.observation ?? "—"}</td>
+                  <td>
+                    {installment.supportDocumentId ? (
+                      <Link className="row-action" href={`/afiliados/${affiliateId}/documentos/${installment.supportDocumentId}`} target="_blank">Ver</Link>
+                    ) : "—"}
+                  </td>
+                  <td>
+                    {installment.receiptNumber ? (
+                      <Link className="row-action" href={`/creditos/abonos/${installment.id}`} target="_blank">{formatCreditReceiptNumber(installment.receiptNumber)}</Link>
+                    ) : "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -67,7 +82,7 @@ function ActiveCreditCard({ credit }: { credit: Credit }) {
   );
 }
 
-export function CreditHistoryPanel({ credits }: { credits: Credit[] }) {
+export function CreditHistoryPanel({ credits, affiliateId }: { credits: Credit[]; affiliateId: string }) {
   if (!credits.length) {
     return <p className="inline-empty">Este afiliado no tiene créditos registrados.</p>;
   }
@@ -77,7 +92,7 @@ export function CreditHistoryPanel({ credits }: { credits: Credit[] }) {
 
   return (
     <div className="credit-history">
-      {active ? <ActiveCreditCard credit={active} /> : <p className="inline-empty">No hay un crédito activo actualmente.</p>}
+      {active ? <ActiveCreditCard credit={active} affiliateId={affiliateId} /> : <p className="inline-empty">No hay un crédito activo actualmente.</p>}
 
       {others.length ? (
         <details className="historical-records">
@@ -87,6 +102,7 @@ export function CreditHistoryPanel({ credits }: { credits: Credit[] }) {
               <p key={credit.id}>
                 <strong>{formatCurrency(credit.totalAmount)} · {creditStatusLabels[credit.status]}</strong>
                 <span>Solicitado {formatDate(credit.requestedOn)} · {credit.termMonths} meses · {formatRate(credit.interestRate)}</span>
+                <StatementLink affiliateId={affiliateId} creditId={credit.id} />
               </p>
             ))}
           </div>

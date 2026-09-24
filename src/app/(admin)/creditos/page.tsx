@@ -4,26 +4,22 @@ import Link from "next/link";
 import { DataSourceBadge } from "@/components/data-source-badge";
 import { Icon } from "@/components/icons";
 import { Pagination } from "@/components/pagination";
-import { formatCurrency, formatDate } from "@/features/affiliates/format";
+import { creditStatusLabels, formatCurrency, formatDate, formatRate } from "@/features/affiliates/format";
 import { countCredits, listCredits } from "@/features/affiliates/repository";
 import type { CreditStatus } from "@/features/affiliates/types";
-import { creditStatusLabels } from "@/features/credits/credit-history-panel";
 import { remainingBalance } from "@/features/credits/calculations";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 export const metadata: Metadata = { title: "Créditos" };
 
-const validStatuses = new Set<CreditStatus>(["active", "paid", "refinanced", "cancelled"]);
+const creditStatuses: CreditStatus[] = ["active", "paused", "paid", "refinanced", "forgiven", "cancelled"];
+const validStatuses = new Set<CreditStatus>(creditStatuses);
 const PAGE_SIZE = 50;
 
 type SearchParams = Promise<{ q?: string | string[]; status?: string | string[]; page?: string | string[] }>;
 
 function firstValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
-}
-
-function formatRate(rate: number) {
-  return `${(rate * 100).toLocaleString("es-CO", { maximumFractionDigits: 2 })}%`;
 }
 
 export default async function CreditsPage({ searchParams }: { searchParams: SearchParams }) {
@@ -68,10 +64,7 @@ export default async function CreditsPage({ searchParams }: { searchParams: Sear
             <span>Estado</span>
             <select name="status" defaultValue={status}>
               <option value="all">Todos</option>
-              <option value="active">Activo</option>
-              <option value="paid">Pagado</option>
-              <option value="refinanced">Refinanciado</option>
-              <option value="cancelled">Cancelado</option>
+              {creditStatuses.map((value) => <option key={value} value={value}>{creditStatusLabels[value]}</option>)}
             </select>
           </label>
           <button className="primary-button" type="submit">Aplicar filtros</button>

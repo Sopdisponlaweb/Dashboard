@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import { formatCurrency, formatPeriod, paymentStatusLabels, sourceLabels } from "./format";
+import { formatCurrency, formatPeriod, formatReceiptNumber, paymentStatusLabels, sourceLabels } from "./format";
 import type { Payment } from "./types";
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100] as const;
@@ -45,18 +45,24 @@ export function PaymentsHistoryPanel({ payments, affiliateId }: { payments: Paym
         <>
           <div className="data-table-wrap">
             <table className="data-table compact-table">
-              <thead><tr><th>Periodo</th><th>Fuente</th><th>Valor</th><th>Estado</th><th>Observación</th><th>Soporte</th></tr></thead>
+              <thead><tr><th>Periodo</th><th>Fuente</th><th>Valor</th><th>Método</th><th>Estado</th><th>Observación</th><th>Soporte</th><th>Recibo</th></tr></thead>
               <tbody>
                 {visible.map((payment) => (
                   <tr key={payment.id}>
                     <td className="sentence-case">{formatPeriod(payment.period)}</td>
                     <td>{sourceLabels[payment.source]}</td>
                     <td className="mono-value">{formatCurrency(payment.amount)}</td>
+                    <td>{payment.paymentMethod ?? "—"}</td>
                     <td><span className={`payment-badge payment-${payment.status}`}>{paymentStatusLabels[payment.status]}</span></td>
                     <td>{payment.observation ?? "Sin observaciones"}</td>
                     <td>
                       {payment.supportDocumentId ? (
                         <Link className="row-action" href={`/afiliados/${affiliateId}/documentos/${payment.supportDocumentId}`} target="_blank">Ver</Link>
+                      ) : "—"}
+                    </td>
+                    <td>
+                      {payment.receiptId && payment.receiptNumber ? (
+                        <Link className="row-action" href={`/pagos/recibos/${payment.receiptId}`} target="_blank">{formatReceiptNumber(payment.receiptNumber)}</Link>
                       ) : "—"}
                     </td>
                   </tr>

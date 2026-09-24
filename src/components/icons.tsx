@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 export type IconName =
   | "dashboard" | "search" | "users" | "heart" | "wallet" | "upload"
   | "file" | "chart" | "layers" | "lock" | "history" | "message"
-  | "menu" | "bell" | "calendar" | "activity" | "arrow" | "plus" | "creditCard";
+  | "menu" | "bell" | "calendar" | "activity" | "arrow" | "plus" | "creditCard" | "edit";
 
 const paths: Record<IconName, ReactNode> = {
   dashboard: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,
@@ -25,6 +25,7 @@ const paths: Record<IconName, ReactNode> = {
   arrow: <><path d="M5 12h14M13 6l6 6-6 6"/></>,
   plus: <><path d="M12 5v14M5 12h14"/></>,
   creditCard: <><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></>,
+  edit: <><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></>,
 };
 
 export function Icon({ name, size = 20, strokeWidth = 1.8 }: { name: IconName; size?: number; strokeWidth?: number }) {

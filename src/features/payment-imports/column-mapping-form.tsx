@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { Icon } from "@/components/icons";
+import { affiliationSources, sourceLabels } from "@/features/affiliates/format";
 
 import { parseSpreadsheetFile, type SpreadsheetGrid } from "./spreadsheet";
 
@@ -145,12 +146,7 @@ export function ColumnMappingForm({ formAction, pending, defaultSource, defaultP
         <label className="form-field">
           <span>Fuente <em>*</em></span>
           <select name="source" defaultValue={defaultSource ?? "activo"} required>
-            <option value="activo">Activo</option>
-            <option value="casur">CASUR</option>
-            <option value="tegen">TEGEN</option>
-            <option value="particular">Particular</option>
-            <option value="inpec">INPEC</option>
-            <option value="ordisponal">ORDISPONAL</option>
+            {affiliationSources.map((value) => <option key={value} value={value}>{sourceLabels[value]}</option>)}
           </select>
         </label>
         <label className="form-field">

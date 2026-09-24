@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 
 import { Icon } from "@/components/icons";
 import { CoverageBadge, StatusBadge } from "@/features/affiliates/affiliate-badges";
-import { documentKindLabels, formatCurrency, formatDate, getCoverageState, getFullName, getInitials, sourceLabels } from "@/features/affiliates/format";
+import { documentKindLabels, formatCurrency, formatDate, getCoverageState, getFullName, getInitials, getWaitingPeriodProgress, WAITING_PERIOD_MONTHS, sourceLabels } from "@/features/affiliates/format";
 import { getAffiliateById } from "@/features/affiliates/repository";
 import { PaymentsHistoryPanel } from "@/features/affiliates/payments-history-panel";
 import { uploadMemberDocument } from "@/features/member-documents/actions";
@@ -12,15 +12,22 @@ import { UploadDocumentForm } from "@/features/member-documents/upload-document-
 import { createAffiliateNote } from "@/features/member-notes/actions";
 import { NotesPanel } from "@/features/member-notes/notes-panel";
 import { listAffiliateNotes } from "@/features/member-notes/repository";
-import { getRecordHistory } from "@/features/audit/repository";
-import { RecordHistoryPanel } from "@/features/audit/record-history-panel";
+import { getAffiliateHistory } from "@/features/audit/affiliate-history";
+import { AffiliateHistoryPanel } from "@/features/audit/affiliate-history-panel";
+import { listPaymentMethods } from "@/features/catalogs/repository";
+import { AccountStatementForm } from "@/features/payments/account-statement-form";
 import { createManualPayment } from "@/features/payments/actions";
+import { coveredPeriods } from "@/features/payments/periods";
 import { ManualPaymentForm } from "@/features/payments/manual-payment-form";
 import { registerCreditInstallment, requestCredit } from "@/features/credits/actions";
 import { remainingBalance } from "@/features/credits/calculations";
 import { CreditHistoryPanel } from "@/features/credits/credit-history-panel";
 import { InstallmentForm } from "@/features/credits/installment-form";
 import { RequestCreditForm } from "@/features/credits/request-credit-form";
+import { resolvePausedCredit } from "@/features/successions/actions";
+import { PausedCreditCard } from "@/features/successions/paused-credit-card";
+import { getAffiliateSuccessions, isAdministrator } from "@/features/successions/repository";
+import { SuccessionBanner } from "@/features/successions/succession-banner";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 type AffiliatePageProps = {
@@ -41,25 +48,56 @@ function firstValue(value: string | string[] | undefined) {
 const beneficiaryResultMessages: Record<string, string> = {
   "beneficiary-created": "El beneficiario fue creado correctamente.",
   "beneficiary-updated": "Los datos del beneficiario fueron actualizados.",
+  "succession-created": "La sucesión quedó registrada. Los beneficiarios y el crédito elegidos pasaron al sucesor.",
+  "succession-annulled": "La sucesión fue anulada y lo transferido volvió al fallecido.",
+  "credit-inherit": "El crédito en pausa pasó al sucesor y quedó activo.",
+  "credit-forgive": "El crédito fue condonado.",
+  "credit-cancel": "El crédito fue cancelado.",
 };
 
 type AffiliateTab = "resumen" | "beneficiarios" | "pagos" | "creditos" | "documentos" | "observaciones" | "historial";
+const HISTORY_LIMIT = 300;
 const validTabs = new Set<AffiliateTab>(["resumen", "beneficiarios", "pagos", "creditos", "documentos", "observaciones", "historial"]);
 
 export default async function AffiliateDetailPage({ params, searchParams }: AffiliatePageProps) {
   const [{ id }, { result, tab: rawTabParam }] = await Promise.all([params, searchParams]);
   const affiliate = await getAffiliateById(id);
   if (!affiliate) notFound();
-  const [notes, history] = await Promise.all([listAffiliateNotes(id), getRecordHistory("affiliates", id)]);
-
   const rawTab = firstValue(rawTabParam) ?? "resumen";
   const tab: AffiliateTab = validTabs.has(rawTab as AffiliateTab) ? (rawTab as AffiliateTab) : "resumen";
+
+  // The history spans every related table; only load it when its tab is open.
+  const successions = await getAffiliateSuccessions(id);
+  const [isAdmin, inheritedFrom] = await Promise.all([
+    successions.asDeceased ? isAdministrator() : Promise.resolve(false),
+    // The successor sees the deceased's payments without moving them.
+    tab === "pagos" ? Promise.all(successions.asSuccessor.map((succession) => getAffiliateById(succession.deceasedId))) : Promise.resolve([]),
+  ]);
+  const [notes, history, paymentMethods] = await Promise.all([
+    listAffiliateNotes(id),
+    tab === "historial" ? getAffiliateHistory(id, HISTORY_LIMIT) : Promise.resolve([]),
+    isSupabaseConfigured() ? listPaymentMethods({ activeOnly: true }) : Promise.resolve([]),
+  ]);
+
+  // Payments come newest period first; suggest the month after the last one paid.
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" }).format(new Date());
+  const lastPaid = affiliate.payments.find((payment) => payment.status === "paid");
+  const suggestedPeriodFrom = lastPaid ? coveredPeriods(lastPaid.period, 2)[1] : today.slice(0, 7);
+
 
   const fullName = getFullName(affiliate);
   const activeCredit = (affiliate.credits ?? []).find((credit) => credit.status === "active") ?? null;
   const activeCreditBalance = activeCredit ? remainingBalance(activeCredit, activeCredit.installments) : null;
-  const waiting = getCoverageState(affiliate) === "waiting";
-  const currentBeneficiaries = affiliate.beneficiaries.filter((beneficiary) => beneficiary.status !== "deceased");
+  const waitingProgress = getWaitingPeriodProgress(affiliate.fullCoverageOn);
+  // An affiliation date in the future is bad data, not a real waiting period.
+  const waiting = getCoverageState(affiliate) === "waiting" && !waitingProgress.invalidDate;
+  // A beneficiary promoted to titular by the succession stays here, flagged, but no longer counts.
+  const promotedBeneficiaries = affiliate.beneficiaries.filter((beneficiary) => beneficiary.promotedToAffiliateId);
+  const currentBeneficiaries = affiliate.beneficiaries.filter((beneficiary) => beneficiary.status !== "deceased" && !beneficiary.promotedToAffiliateId);
+  const pausedCredits = (affiliate.credits ?? []).filter((credit) => credit.status === "paused");
+  const successorForCredits = successions.asDeceased?.successorId
+    ? { id: successions.asDeceased.successorId, name: successions.asDeceased.successorName }
+    : null;
   const historicalBeneficiaries = affiliate.beneficiaries.filter((beneficiary) => beneficiary.status === "deceased");
   const resultMessage = beneficiaryResultMessages[firstValue(result) ?? ""];
 
@@ -83,21 +121,38 @@ export default async function AffiliateDetailPage({ params, searchParams }: Affi
         </div>
       ) : null}
 
-      <header className={`member-profile-header${waiting ? " is-waiting" : ""}`}>
+      <header className={`member-profile-header${waiting ? " is-waiting" : ""}`} data-status={affiliate.status}>
         <div className="member-identity">
           <span className="person-initials profile-initials">{affiliate.firstNames[0]}{affiliate.lastNames[0]}</span>
           <div><p className="eyebrow">Ficha integral</p><h1>{fullName}</h1><p>{affiliate.documentType} {affiliate.documentNumber} · {sourceLabels[affiliate.source]}</p></div>
         </div>
         <div className="member-actions">
-          <div className="member-state"><StatusBadge status={affiliate.status} /><CoverageBadge status={affiliate.status} fullCoverageOn={affiliate.fullCoverageOn} /></div>
+          <div className="member-state">
+            <StatusBadge status={affiliate.status} />
+            {affiliate.status === "deceased" ? (
+              successions.asDeceased
+                ? <span className="succession-badge is-registered">Sucedido</span>
+                : <span className="succession-badge is-pending">Sucesión pendiente</span>
+            ) : null}
+            {successions.asSuccessor.length ? <span className="succession-badge is-successor">Titular por sucesión</span> : null}
+            <CoverageBadge status={affiliate.status} fullCoverageOn={affiliate.fullCoverageOn} />
+          </div>
           <Link className="secondary-button" href={`/afiliados/${affiliate.id}/editar`}>Editar datos <Icon name="arrow" size={15} /></Link>
         </div>
       </header>
 
+      <SuccessionBanner affiliateId={affiliate.id} isDeceased={affiliate.status === "deceased"} successions={successions} isAdmin={isAdmin} />
+
       {waiting ? (
         <section className="coverage-notice" aria-label="Periodo inicial de cobertura">
           <span><Icon name="calendar" size={21} /></span>
-          <div><strong>Afiliación dentro del periodo inicial</strong><p>Esta persona tendrá el 100 % del servicio a partir del {formatDate(affiliate.fullCoverageOn)}.</p></div>
+          <div>
+            <strong>En carencia · mes {waitingProgress.month} de {WAITING_PERIOD_MONTHS}</strong>
+            <p>
+              Faltan {waitingProgress.timeLeft}: tendrá el 100 % del servicio a partir del{" "}
+              {formatDate(affiliate.fullCoverageOn)}.
+            </p>
+          </div>
         </section>
       ) : null}
 
@@ -166,18 +221,42 @@ export default async function AffiliateDetailPage({ params, searchParams }: Affi
             {currentBeneficiaries.length ? (
               <div className="beneficiary-list">
                 {currentBeneficiaries.map((beneficiary) => (
-                  <article className="beneficiary-row" key={beneficiary.id}>
+                  <article
+                    className={`beneficiary-row${getCoverageState(beneficiary) === "waiting" ? " is-waiting" : ""}`}
+                    data-status={beneficiary.status}
+                    key={beneficiary.id}
+                  >
                     <span className="person-initials">{getInitials(beneficiary)}</span>
-                    <div><strong>{getFullName(beneficiary)}</strong><span>{beneficiary.relationship} · {beneficiary.documentNumber ?? "Documento pendiente"}</span></div>
-                    <StatusBadge status={beneficiary.status} />
+                    <div>
+                      <strong>{getFullName(beneficiary)}</strong>
+                      <span>{beneficiary.relationship} · {beneficiary.documentNumber ?? "Documento pendiente"}</span>
+                      {beneficiary.inheritedFromAffiliateId ? (
+                        <span className="inherited-tag">
+                          Heredado de <Link href={`/afiliados/${beneficiary.inheritedFromAffiliateId}`}>{beneficiary.inheritedFromName ?? "titular fallecido"}</Link>
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="beneficiary-badges">
+                      <StatusBadge status={beneficiary.status} />
+                      <CoverageBadge status={beneficiary.status} fullCoverageOn={beneficiary.fullCoverageOn} />
+                    </p>
                     <Link className="row-action" href={`/afiliados/${affiliate.id}/beneficiarios/${beneficiary.id}/editar`} aria-label={`Editar a ${beneficiary.firstNames} ${beneficiary.lastNames}`}>Editar</Link>
                   </article>
                 ))}
               </div>
             ) : <p className="inline-empty">Este titular no tiene beneficiarios vigentes.</p>}
 
+            {promotedBeneficiaries.map((beneficiary) => (
+              <article className="beneficiary-row is-promoted" key={beneficiary.id}>
+                <span className="person-initials">{getInitials(beneficiary)}</span>
+                <div><strong>{getFullName(beneficiary)}</strong><span>{beneficiary.relationship} · pasó a ser titular por sucesión</span></div>
+                <span className="succession-badge is-successor">Ahora titular</span>
+                <Link className="row-action" href={`/afiliados/${beneficiary.promotedToAffiliateId}`}>Ver ficha <Icon name="arrow" size={15} /></Link>
+              </article>
+            ))}
+
             {historicalBeneficiaries.length ? (
-              <details className="historical-records">
+              <details className="historical-records" data-status="deceased">
                 <summary><Icon name="lock" size={16} /> Histórico reservado · {historicalBeneficiaries.length}</summary>
                 <div>
                   {historicalBeneficiaries.map((beneficiary) => {
@@ -207,12 +286,39 @@ export default async function AffiliateDetailPage({ params, searchParams }: Affi
         ) : tab === "pagos" ? (
           <section className="detail-panel" aria-labelledby="payments-title">
             <div className="panel-header"><div><h2 id="payments-title">Histórico de pagos</h2><p>Aportes registrados y observaciones del proceso</p></div><span className="panel-tag">{affiliate.payments.length} {affiliate.payments.length === 1 ? "movimiento" : "movimientos"}</span></div>
+            {affiliate.payments.length ? (
+              <AccountStatementForm
+                affiliateId={affiliate.id}
+                firstPeriod={affiliate.payments[affiliate.payments.length - 1].period}
+                lastPeriod={affiliate.payments[0].period}
+              />
+            ) : null}
             <ManualPaymentForm
               createAction={createManualPayment.bind(null, affiliate.id)}
               persistenceEnabled={isSupabaseConfigured()}
               defaultSource={affiliate.source}
+              paymentMethods={paymentMethods}
+              suggestedPeriodFrom={suggestedPeriodFrom}
+              suggestedMonthlyAmount={lastPaid?.amount ?? null}
+              today={today}
             />
             <PaymentsHistoryPanel payments={affiliate.payments} affiliateId={affiliate.id} />
+
+            {inheritedFrom.map((deceased) => deceased ? (
+              <section key={deceased.id} className="inherited-payments" aria-label={`Pagos heredados de ${getFullName(deceased)}`}>
+                <div className="panel-header">
+                  <div>
+                    <h3>Pagos heredados de {getFullName(deceased)}</h3>
+                    <p>Historial del titular fallecido, solo de consulta. Los pagos siguen a su nombre.</p>
+                  </div>
+                  <div className="panel-header-actions">
+                    <span className="panel-tag">{deceased.payments.length} movimientos</span>
+                    <Link className="panel-link" href={`/afiliados/${deceased.id}/estado-de-cuenta`} target="_blank"><Icon name="file" size={14} /> Estado de cuenta PDF</Link>
+                  </div>
+                </div>
+                <PaymentsHistoryPanel payments={deceased.payments} affiliateId={deceased.id} />
+              </section>
+            ) : null)}
           </section>
         ) : tab === "creditos" ? (
           <section className="detail-panel" aria-labelledby="credits-title">
@@ -226,9 +332,26 @@ export default async function AffiliateDetailPage({ params, searchParams }: Affi
               <InstallmentForm
                 createAction={registerCreditInstallment.bind(null, activeCredit.id, affiliate.id)}
                 persistenceEnabled={isSupabaseConfigured()}
+                paymentMethods={paymentMethods}
+                principalBase={activeCredit.principalBase}
+                totalAmount={activeCredit.totalAmount}
+                installmentAmount={activeCredit.installmentAmount}
+                remainingTotal={activeCreditBalance?.remainingTotal ?? activeCredit.totalAmount}
+                requestedOn={activeCredit.requestedOn}
+                today={today}
               />
             ) : null}
-            <CreditHistoryPanel credits={affiliate.credits ?? []} />
+            {pausedCredits.map((credit) => (
+              <PausedCreditCard
+                key={credit.id}
+                action={resolvePausedCredit.bind(null, credit.id, affiliate.id)}
+                affiliateId={affiliate.id}
+                credit={credit}
+                remainingTotal={remainingBalance(credit, credit.installments).remainingTotal}
+                successor={successorForCredits}
+              />
+            ))}
+            <CreditHistoryPanel credits={(affiliate.credits ?? []).filter((credit) => credit.status !== "paused")} affiliateId={affiliate.id} />
           </section>
         ) : tab === "documentos" ? (
           <section className="detail-panel">
@@ -259,8 +382,8 @@ export default async function AffiliateDetailPage({ params, searchParams }: Affi
           </section>
         ) : (
           <section className="detail-panel">
-            <div className="aside-title"><span><Icon name="history" size={18} /></span><div><h2>Historial de cambios</h2><p>Fecha y usuario de cada modificación</p></div></div>
-            <RecordHistoryPanel entries={history} />
+            <div className="aside-title"><span><Icon name="history" size={18} /></span><div><h2>Historial del afiliado</h2><p>Datos, beneficiarios, pagos, créditos, documentos y observaciones, con fecha y usuario</p></div></div>
+            <AffiliateHistoryPanel entries={history} limitReached={history.length >= HISTORY_LIMIT} />
           </section>
         )}
       </div>

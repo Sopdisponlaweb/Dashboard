@@ -3,10 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { formatCurrency, formatDate } from "@/features/affiliates/format";
+import { discardSupportDocument, readSupportFile, storeSupportDocument, type StoredSupport } from "@/features/member-documents/support-upload";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 
-import { splitPayment } from "./calculations";
 import type { CreditFormState } from "./form-state";
 
 const amountSchema = z
@@ -28,8 +29,9 @@ const requestCreditSchema = z.object({
 });
 
 const registerInstallmentSchema = z.object({
-  paidOn: z.string().min(1, "Selecciona la fecha del abono."),
+  paidOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Selecciona la fecha del abono."),
   amount: amountSchema.refine((value) => Number(value) > 0, "El valor debe ser mayor a cero."),
+  paymentMethodId: z.string().uuid("Selecciona el método de pago."),
   observation: z.string().max(500, "Máximo 500 caracteres.").optional(),
 });
 
@@ -100,6 +102,7 @@ export async function registerCreditInstallment(
   const parsed = registerInstallmentSchema.safeParse({
     paidOn: String(formData.get("paidOn") ?? "").trim(),
     amount: String(formData.get("amount") ?? "").trim(),
+    paymentMethodId: String(formData.get("paymentMethodId") ?? ""),
     observation: String(formData.get("observation") ?? "").trim() || undefined,
   });
 
@@ -107,56 +110,65 @@ export async function registerCreditInstallment(
     return { status: "error", message: parsed.error.issues[0]?.message ?? "Revisa los datos del abono." };
   }
 
+  const supportFile = readSupportFile(formData);
+  if (supportFile.error) return { status: "error", message: supportFile.error };
+
   if (!isSupabaseConfigured()) return { status: "unavailable", message: "Activa Supabase local para registrar abonos." };
 
   const auth = await requireSession();
   if (!auth.ok) return { status: "error", message: "Tu sesión no es válida o venció." };
 
-  const { paidOn, amount, observation } = parsed.data;
+  const { paidOn, amount, paymentMethodId, observation } = parsed.data;
 
-  const { data: credit, error: creditError } = await auth.supabase
-    .from("credits")
-    .select("status, principal_base, total_amount, credit_installments(amount)")
-    .eq("id", creditId)
-    .maybeSingle();
-
-  if (creditError || !credit) {
-    return { status: "error", message: "No fue posible encontrar el crédito." };
-  }
-  if (credit.status !== "active") {
-    return { status: "error", message: "Este crédito ya no está activo." };
-  }
-
-  const alreadyPaid = ((credit.credit_installments as { amount: number }[] | null) ?? [])
-    .reduce((sum, item) => sum + Number(item.amount), 0);
-  const remainingTotal = Number(credit.total_amount) - alreadyPaid;
-  const amountValue = Number(amount);
-
-  if (amountValue > remainingTotal + 0.01) {
-    return { status: "error", message: `El abono supera el saldo pendiente ($${remainingTotal.toLocaleString("es-CO")}).` };
+  let support: StoredSupport | null = null;
+  if (supportFile.file && supportFile.mime) {
+    support = await storeSupportDocument(auth.supabase, {
+      affiliateId,
+      file: supportFile.file,
+      mime: supportFile.mime,
+      title: `Soporte de abono a crédito · ${formatDate(paidOn)}`,
+      userId: auth.userId,
+    });
+    if (!support) return { status: "error", message: "No fue posible guardar el soporte del abono." };
   }
 
-  const { capitalPortion, interestPortion } = splitPayment({
-    principalBase: Number(credit.principal_base),
-    totalAmount: Number(credit.total_amount),
-    amount: amountValue,
+  // The function locks the credit, validates balance and date, and splits capital/interest.
+  const { data: installmentId, error } = await auth.supabase.rpc("register_credit_installment", {
+    p_credit_id: creditId,
+    p_amount: Number(amount),
+    p_paid_on: paidOn,
+    p_payment_method_id: paymentMethodId,
+    p_observation: observation ?? "",
+    p_support_document_id: support?.documentId ?? null,
   });
 
-  const { error } = await auth.supabase.from("credit_installments").insert({
-    credit_id: creditId,
-    paid_on: paidOn,
-    amount: amountValue,
-    capital_portion: capitalPortion,
-    interest_portion: interestPortion,
-    observation: observation ?? null,
-    created_by: auth.userId,
-  });
+  if (error || !installmentId) {
+    if (support) await discardSupportDocument(auth.supabase, support);
 
-  if (error) {
-    const message = error.code === "42501" ? "No tienes permiso para registrar abonos." : "No fue posible registrar el abono.";
+    const message =
+      error?.message === "amount_exceeds_balance"
+        ? `El abono supera el saldo pendiente (${formatCurrency(Number(error.details))}).`
+        : error?.message === "credit_not_active"
+          ? "Este crédito ya no está activo."
+          : error?.message === "invalid_paid_on"
+            ? "La fecha del abono debe estar entre la fecha del crédito y hoy."
+            : error?.code === "42501"
+              ? "No tienes permiso para registrar abonos."
+              : "No fue posible registrar el abono.";
     return { status: "error", message };
   }
 
+  const { data: installment } = await auth.supabase
+    .from("credit_installments")
+    .select("receipt_number")
+    .eq("id", installmentId)
+    .single();
+
   revalidateCreditPaths(affiliateId);
-  return { status: "idle" };
+  return {
+    status: "created",
+    message: `Abono de ${formatCurrency(Number(amount))} registrado.`,
+    installmentId: installmentId as string,
+    receiptNumber: (installment?.receipt_number as number | undefined) ?? undefined,
+  };
 }

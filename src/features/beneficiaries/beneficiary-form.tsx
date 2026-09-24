@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 
 import { Icon } from "@/components/icons";
+import { affiliateStatuses, describeWaitingPeriod, statusLabels } from "@/features/affiliates/format";
 import type { Municipality } from "@/features/catalogs/repository";
 
 import { initialBeneficiaryActionState, type BeneficiaryActionState } from "./form-state";
@@ -40,6 +41,7 @@ export function BeneficiaryForm({
   const [state, formAction, pending] = useActionState(action, initialBeneficiaryActionState);
   const values = state.values ?? initialValues;
   const [status, setStatus] = useState(values.status);
+  const [joinedOn, setJoinedOn] = useState(values.joinedOn);
   const isDeceased = status === "deceased";
   const departments = Array.from(new Set(municipalities.map((m) => m.department))).sort((a, b) => a.localeCompare(b, "es"));
   const [deathDepartment, setDeathDepartment] = useState(() => {
@@ -116,7 +118,12 @@ export function BeneficiaryForm({
       <section className="form-section" aria-labelledby="beneficiary-status-title">
         <div className="form-section-heading"><span>05</span><div><h2 id="beneficiary-status-title">Vigencia</h2><p>El sistema calculará la cobertura completa seis meses después de la vinculación.</p></div></div>
         <div className="field-grid field-grid-three">
-          <label className="form-field"><span>Fecha de vinculación <em>*</em></span><input name="joinedOn" type="date" defaultValue={values.joinedOn} required {...fieldProps("joinedOn")} />{error("joinedOn")}</label>
+          <label className="form-field">
+            <span>Fecha de vinculación <em>*</em></span>
+            <input name="joinedOn" type="date" defaultValue={values.joinedOn} onChange={(event) => setJoinedOn(event.target.value)} required {...fieldProps("joinedOn")} />
+            <small>{describeWaitingPeriod(joinedOn)}</small>
+            {error("joinedOn")}
+          </label>
           <label className="form-field">
             <span>Estado <em>*</em></span>
             <select
@@ -126,10 +133,7 @@ export function BeneficiaryForm({
               required
               {...fieldProps("status")}
             >
-              <option value="active">Activo</option>
-              <option value="inactive">Inactivo</option>
-              <option value="suspended">Suspendido</option>
-              <option value="deceased">Fallecido</option>
+              {affiliateStatuses.map((value) => <option key={value} value={value}>{statusLabels[value]}</option>)}
             </select>
             <small>Los estados por mora se actualizarán automáticamente con los pagos.</small>
             {error("status")}

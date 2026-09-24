@@ -36,7 +36,7 @@ export const assistantTools: ToolDefinition[] = [
   },
   {
     name: "get_dashboard_summary",
-    description: "Obtiene indicadores generales de la operación: totales de titulares activos, en carencia, inactivos y suspendidos por mora; beneficiarios; recaudo mensual reciente; distribución por tipo de afiliación; alertas de mora.",
+    description: "Obtiene indicadores generales de la operación: totales de titulares activos, en carencia, suspendidos (3 a 5 meses de mora) y retirados (6 meses o más); beneficiarios; recaudo mensual reciente; distribución por tipo de afiliación; alertas de mora. Los conteos usan claves internas: inactive = Suspendido, suspended = Retirado.",
     parameters: { type: "object", properties: {} },
   },
   {
@@ -109,7 +109,8 @@ export async function runAssistantTool(name: string, input: Record<string, unkno
     }
 
     case "get_dashboard_summary":
-      return getDashboardSummary();
+      // Counts are keyed by internal status; tell the model the names users see.
+      return { ...(await getDashboardSummary()), nombresDeEstado: statusLabels };
 
     case "get_payment_totals":
       return getPaymentTotals();

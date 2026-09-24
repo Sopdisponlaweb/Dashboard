@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { DataSourceBadge } from "@/components/data-source-badge";
 import { Icon, type IconName } from "@/components/icons";
-import { demoReferenceDate, formatCurrency, formatDate, formatPeriod, sourceLabels } from "@/features/affiliates/format";
+import { formatCurrency, formatDate, formatPeriod, sourceLabels } from "@/features/affiliates/format";
 import { getDashboardSummary } from "@/features/affiliates/repository";
 import { listActiveAnnouncements } from "@/features/announcements/repository";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
@@ -10,7 +10,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 type Metric = { label: string; value: number; note: string; tone: string; icon: IconName };
 
 const monthLabelFormatter = new Intl.DateTimeFormat("es-CO", { month: "short", year: "2-digit", timeZone: "UTC" });
-const headingDateFormatter = new Intl.DateTimeFormat("es-CO", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+const headingDateFormatter = new Intl.DateTimeFormat("es-CO", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Bogota" });
 
 function capitalize(value: string) {
   return value.charAt(0).toLocaleUpperCase("es-CO") + value.slice(1);
@@ -47,14 +47,20 @@ export default async function DashboardPage() {
   const holderMetrics: Metric[] = [
     { label: "Titulares activos", value: summary.holderStatusCounts.active, note: `${percent(summary.holderStatusCounts.active, summary.operationalTotal)} % del total operativo`, tone: "metric-success", icon: "users" },
     { label: "En carencia", value: summary.waitingCoverageCount, note: "Cobertura menor a 6 meses", tone: "metric-warning", icon: "calendar" },
-    { label: "Inactivos", value: summary.holderStatusCounts.inactive, note: "3 a 5 meses en mora", tone: "metric-info", icon: "activity" },
-    { label: "Suspendidos", value: summary.holderStatusCounts.suspended, note: "6 meses o más en mora", tone: "metric-danger", icon: "lock" },
+    { label: "Suspendidos", value: summary.holderStatusCounts.inactive, note: "3 a 5 meses en mora", tone: "metric-info", icon: "activity" },
+    { label: "Retirados", value: summary.holderStatusCounts.suspended, note: "6 meses o más en mora", tone: "metric-danger", icon: "lock" },
   ];
 
   const beneficiaryMetrics: Metric[] = [
     { label: "Beneficiarios activos", value: summary.beneficiaryStatusCounts.active, note: "Vinculados a titulares vigentes", tone: "metric-success", icon: "heart" },
-    { label: "Beneficiarios inactivos", value: summary.beneficiaryStatusCounts.inactive + summary.beneficiaryStatusCounts.suspended, note: "Fuera de cobertura", tone: "metric-info", icon: "users" },
-    { label: "Titulares fallecidos", value: summary.holderStatusCounts.deceased, note: "Conservados en histórico", tone: "metric-danger", icon: "history" },
+    { label: "Beneficiarios suspendidos o retirados", value: summary.beneficiaryStatusCounts.inactive + summary.beneficiaryStatusCounts.suspended, note: "Fuera de cobertura", tone: "metric-info", icon: "users" },
+    {
+      label: "Titulares fallecidos",
+      value: summary.holderStatusCounts.deceased,
+      note: summary.pendingSuccessionCount ? `${summary.pendingSuccessionCount.toLocaleString("es-CO")} con sucesión pendiente` : "Conservados en histórico",
+      tone: "metric-danger",
+      icon: "history",
+    },
     { label: "Beneficiarios fallecidos", value: summary.beneficiaryStatusCounts.deceased, note: "Ocultos en la vista operativa", tone: "metric-danger", icon: "history" },
   ];
 
@@ -86,7 +92,7 @@ export default async function DashboardPage() {
     <>
       <header className="page-heading">
         <div>
-          <p className="eyebrow">{capitalize(headingDateFormatter.format(new Date(demoReferenceDate)))}</p>
+          <p className="eyebrow">{capitalize(headingDateFormatter.format(new Date()))}</p>
           <h1>Resumen de la operación</h1>
           <p>Indicadores de afiliación, cobertura y recaudo para tomar decisiones desde un solo lugar.</p>
         </div>

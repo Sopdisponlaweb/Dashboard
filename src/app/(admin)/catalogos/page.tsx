@@ -3,16 +3,31 @@ import Link from "next/link";
 
 import { DataSourceBadge } from "@/components/data-source-badge";
 import { sourceLabels } from "@/features/affiliates/format";
-import type { AffiliationSource } from "@/features/affiliates/types";
-import { toggleOrganizationActive, togglePoliceRankActive } from "@/features/catalogs/actions";
+import {
+  deleteMunicipality,
+  deleteOrganization,
+  deletePaymentMethod,
+  deletePoliceRank,
+  toggleMunicipalityActive,
+  toggleOrganizationActive,
+  togglePaymentMethodActive,
+  togglePoliceRankActive,
+  updateMunicipality,
+  updateOrganization,
+  updatePaymentMethod,
+  updatePoliceRank,
+} from "@/features/catalogs/actions";
+import { EditableCatalogTable, type CatalogColumn } from "@/features/catalogs/editable-catalog-table";
 import { MunicipalityForm } from "@/features/catalogs/municipality-form";
-import { MunicipalityTable } from "@/features/catalogs/municipality-table";
 import { OrganizationForm } from "@/features/catalogs/organization-form";
+import { PaymentMethodForm } from "@/features/catalogs/payment-method-form";
 import { PoliceRankForm } from "@/features/catalogs/police-rank-form";
 import {
   canManageSettings,
+  countAffiliatesBySource,
   listMunicipalities,
   listOrganizations,
+  listPaymentMethods,
   listPoliceRanks,
   organizationTypeLabels,
   policeRankCategoryLabels,
@@ -21,15 +36,66 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 export const metadata: Metadata = { title: "Catálogos" };
 
-const affiliationSources: AffiliationSource[] = ["particular", "activo", "casur", "tegen", "inpec", "ordisponal"];
+type CatalogTab = "municipios" | "entidades" | "rangos" | "metodos" | "fuentes";
+const validTabs = new Set<CatalogTab>(["municipios", "entidades", "rangos", "metodos", "fuentes"]);
 
-type CatalogTab = "municipios" | "entidades" | "rangos" | "fuentes";
-const validTabs = new Set<CatalogTab>(["municipios", "entidades", "rangos", "fuentes"]);
+const tabs: { key: CatalogTab; label: string }[] = [
+  { key: "municipios", label: "Municipios" },
+  { key: "entidades", label: "Entidades" },
+  { key: "rangos", label: "Rangos de policía" },
+  { key: "metodos", label: "Métodos de pago" },
+  { key: "fuentes", label: "Tipos de afiliación" },
+];
+
+const municipalityColumns: CatalogColumn[] = [
+  { key: "department", label: "Departamento", required: true, maxLength: 120 },
+  { key: "name", label: "Municipio", required: true, maxLength: 120, variant: "strong" },
+  { key: "daneCode", label: "DANE", maxLength: 20, placeholder: "Opcional", variant: "mono" },
+];
+
+const organizationColumns: CatalogColumn[] = [
+  { key: "name", label: "Nombre", required: true, maxLength: 160, variant: "strong" },
+  {
+    key: "organizationType",
+    label: "Tipo",
+    required: true,
+    options: Object.entries(organizationTypeLabels).map(([value, label]) => ({ value, label })),
+  },
+];
+
+const policeRankColumns: CatalogColumn[] = [
+  { key: "name", label: "Nombre", required: true, maxLength: 80, variant: "strong" },
+  { key: "abbreviation", label: "Sigla", maxLength: 10, placeholder: "Opcional" },
+  {
+    key: "category",
+    label: "Categoría",
+    required: true,
+    options: Object.entries(policeRankCategoryLabels).map(([value, label]) => ({ value, label })),
+  },
+];
+
+const paymentMethodColumns: CatalogColumn[] = [
+  { key: "name", label: "Nombre", required: true, maxLength: 80, variant: "strong" },
+];
 
 type SearchParams = Promise<{ tab?: string | string[] }>;
 
 function firstValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function CatalogPanel({ id, title, description, children }: { id: string; title: string; description: string; children: React.ReactNode }) {
+  return (
+    <section className="detail-panel" aria-labelledby={id}>
+      <div className="panel-header">
+        <div>
+          <h2 id={id}>{title}</h2>
+          <p>{description}</p>
+        </div>
+      </div>
+      {children}
+    </section>
+  );
 }
 
 export default async function CatalogsPage({ searchParams }: { searchParams: SearchParams }) {
@@ -40,9 +106,13 @@ export default async function CatalogsPage({ searchParams }: { searchParams: Sea
   const persistenceEnabled = isSupabaseConfigured();
   const hasAccess = persistenceEnabled ? await canManageSettings() : false;
 
-  const municipalities = hasAccess && tab === "municipios" ? await listMunicipalities() : [];
-  const organizations = hasAccess && tab === "entidades" ? await listOrganizations() : [];
-  const policeRanks = hasAccess && tab === "rangos" ? await listPoliceRanks() : [];
+  const [municipalities, organizations, policeRanks, paymentMethods, sourceUsage] = await Promise.all([
+    hasAccess && tab === "municipios" ? listMunicipalities() : [],
+    hasAccess && tab === "entidades" ? listOrganizations() : [],
+    hasAccess && tab === "rangos" ? listPoliceRanks() : [],
+    hasAccess && tab === "metodos" ? listPaymentMethods() : [],
+    hasAccess && tab === "fuentes" ? countAffiliatesBySource() : [],
+  ]);
 
   return (
     <>
@@ -50,7 +120,7 @@ export default async function CatalogsPage({ searchParams }: { searchParams: Sea
         <div>
           <p className="eyebrow">Configuración</p>
           <h1>Catálogos</h1>
-          <p>Centraliza municipios y entidades (empresas, cajas de compensación y terceros pagadores) usadas en afiliados y pagos.</p>
+          <p>Centraliza municipios, entidades, rangos y métodos de pago usados en afiliados y pagos.</p>
         </div>
         <DataSourceBadge connected={persistenceEnabled} connectedLabel="Conectado a Supabase local" disconnectedLabel="Requiere conexión a Supabase" />
       </header>
@@ -62,97 +132,106 @@ export default async function CatalogsPage({ searchParams }: { searchParams: Sea
       ) : (
         <>
           <nav className="tab-bar" aria-label="Catálogos">
-            <Link className={`tab-link${tab === "municipios" ? " is-active" : ""}`} href="/catalogos?tab=municipios">Municipios</Link>
-            <Link className={`tab-link${tab === "entidades" ? " is-active" : ""}`} href="/catalogos?tab=entidades">Entidades</Link>
-            <Link className={`tab-link${tab === "rangos" ? " is-active" : ""}`} href="/catalogos?tab=rangos">Rangos de policía</Link>
-            <Link className={`tab-link${tab === "fuentes" ? " is-active" : ""}`} href="/catalogos?tab=fuentes">Tipos de afiliación</Link>
+            {tabs.map((item) => (
+              <Link
+                key={item.key}
+                className={`tab-link${tab === item.key ? " is-active" : ""}`}
+                href={`/catalogos?tab=${item.key}`}
+                aria-current={tab === item.key ? "page" : undefined}
+              >
+                {item.label}
+              </Link>
+            ))}
           </nav>
 
           <div className="tab-panel">
             {tab === "municipios" ? (
-              <section className="detail-panel" aria-labelledby="municipalities-title">
-                <div className="panel-header">
-                  <div>
-                    <h2 id="municipalities-title">Municipios ({municipalities.length})</h2>
-                    <p>Se usan en la ficha del afiliado. Los ya usados no se pueden eliminar, solo inactivar.</p>
-                  </div>
-                </div>
+              <CatalogPanel id="municipalities-title" title="Municipios" description="Se usan en la ficha del afiliado. Los ya usados no se pueden eliminar, solo inactivar.">
                 <MunicipalityForm />
-                <MunicipalityTable municipalities={municipalities} />
-              </section>
+                <EditableCatalogTable
+                  rows={municipalities.map((item) => ({
+                    id: item.id,
+                    isActive: item.isActive,
+                    values: { department: item.department, name: item.name, daneCode: item.daneCode ?? "" },
+                  }))}
+                  columns={municipalityColumns}
+                  updateAction={updateMunicipality}
+                  toggleAction={toggleMunicipalityActive}
+                  deleteAction={deleteMunicipality}
+                  searchPlaceholder="Buscar municipio, departamento o código DANE"
+                  emptyMessage="No hay municipios registrados."
+                  pageSize={50}
+                />
+              </CatalogPanel>
             ) : tab === "entidades" ? (
-              <section className="detail-panel" aria-labelledby="organizations-title">
-                <div className="panel-header">
-                  <div>
-                    <h2 id="organizations-title">Entidades ({organizations.length})</h2>
-                    <p>Empresas, cajas de compensación y terceros pagadores vinculados a afiliados.</p>
-                  </div>
-                </div>
+              <CatalogPanel id="organizations-title" title="Entidades" description="Empresas, cajas de compensación y terceros pagadores vinculados a afiliados.">
                 <OrganizationForm />
-                <div className="data-table-wrap">
-                  <table className="data-table compact-table">
-                    <thead><tr><th>Nombre</th><th>Tipo</th><th>Estado</th><th><span className="sr-only">Acciones</span></th></tr></thead>
-                    <tbody>
-                      {organizations.map((organization) => (
-                        <tr key={organization.id}>
-                          <td><strong>{organization.name}</strong></td>
-                          <td>{organizationTypeLabels[organization.organizationType]}</td>
-                          <td><span className={`payment-badge ${organization.isActive ? "payment-paid" : "payment-reversed"}`}>{organization.isActive ? "Activa" : "Inactiva"}</span></td>
-                          <td>
-                            <form action={toggleOrganizationActive.bind(null, organization.id, !organization.isActive)}>
-                              <button className="row-action" type="submit">{organization.isActive ? "Inactivar" : "Activar"}</button>
-                            </form>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
+                <EditableCatalogTable
+                  rows={organizations.map((item) => ({
+                    id: item.id,
+                    isActive: item.isActive,
+                    values: { name: item.name, organizationType: item.organizationType },
+                  }))}
+                  columns={organizationColumns}
+                  updateAction={updateOrganization}
+                  toggleAction={toggleOrganizationActive}
+                  deleteAction={deleteOrganization}
+                  statusLabels={["Activa", "Inactiva"]}
+                  searchPlaceholder="Buscar entidad"
+                  emptyMessage="No hay entidades registradas."
+                />
+              </CatalogPanel>
             ) : tab === "rangos" ? (
-              <section className="detail-panel" aria-labelledby="police-ranks-title">
-                <div className="panel-header">
-                  <div>
-                    <h2 id="police-ranks-title">Rangos de policía ({policeRanks.length})</h2>
-                    <p>Grados de la Policía Nacional, incluidos los históricos usados por afiliados retirados.</p>
-                  </div>
-                </div>
+              <CatalogPanel id="police-ranks-title" title="Rangos de policía" description="Grados de la Policía Nacional, incluidos los históricos usados por afiliados retirados.">
                 <PoliceRankForm />
+                <EditableCatalogTable
+                  rows={policeRanks.map((item) => ({
+                    id: item.id,
+                    isActive: item.isActive,
+                    values: { name: item.name, abbreviation: item.abbreviation ?? "", category: item.category },
+                  }))}
+                  columns={policeRankColumns}
+                  updateAction={updatePoliceRank}
+                  toggleAction={togglePoliceRankActive}
+                  deleteAction={deletePoliceRank}
+                  searchPlaceholder="Buscar rango, sigla o categoría"
+                  emptyMessage="No hay rangos registrados."
+                />
+              </CatalogPanel>
+            ) : tab === "metodos" ? (
+              <CatalogPanel id="payment-methods-title" title="Métodos de pago" description="Formas en que el afiliado entrega su aporte o abono. Solo los activos aparecen al registrar un pago.">
+                <PaymentMethodForm />
+                <EditableCatalogTable
+                  rows={paymentMethods.map((item) => ({ id: item.id, isActive: item.isActive, values: { name: item.name } }))}
+                  columns={paymentMethodColumns}
+                  updateAction={updatePaymentMethod}
+                  toggleAction={togglePaymentMethodActive}
+                  deleteAction={deletePaymentMethod}
+                  searchPlaceholder="Buscar método de pago"
+                  emptyMessage="No hay métodos de pago registrados."
+                />
+              </CatalogPanel>
+            ) : (
+              <CatalogPanel id="sources-title" title="Tipos de afiliación" description="Clasifican a cada titular y a sus pagos. Son parte de la estructura de la base de datos: los nombres visibles se definen en el sistema y agregar un tipo nuevo requiere un cambio técnico.">
                 <div className="data-table-wrap">
-                  <table className="data-table compact-table">
-                    <thead><tr><th>Nombre</th><th>Sigla</th><th>Categoría</th><th>Estado</th><th><span className="sr-only">Acciones</span></th></tr></thead>
+                  <table className="data-table compact-table catalog-table">
+                    <thead>
+                      <tr><th>Tipo</th><th>Clave interna</th><th>Titulares vigentes</th><th>Titulares en total</th><th>Estado</th></tr>
+                    </thead>
                     <tbody>
-                      {policeRanks.map((rank) => (
-                        <tr key={rank.id}>
-                          <td><strong>{rank.name}</strong></td>
-                          <td>{rank.abbreviation ?? "—"}</td>
-                          <td>{policeRankCategoryLabels[rank.category]}</td>
-                          <td><span className={`payment-badge ${rank.isActive ? "payment-paid" : "payment-reversed"}`}>{rank.isActive ? "Activo" : "Inactivo"}</span></td>
-                          <td>
-                            <form action={togglePoliceRankActive.bind(null, rank.id, !rank.isActive)}>
-                              <button className="row-action" type="submit">{rank.isActive ? "Inactivar" : "Activar"}</button>
-                            </form>
-                          </td>
+                      {sourceUsage.map((item) => (
+                        <tr key={item.source}>
+                          <td><span className={`source-label source-${item.source}`}>{sourceLabels[item.source]}</span></td>
+                          <td className="mono-value">{item.source}</td>
+                          <td className="mono-value">{item.current.toLocaleString("es-CO")}</td>
+                          <td className="mono-value">{item.total.toLocaleString("es-CO")}</td>
+                          <td><span className="payment-badge payment-paid">Activo</span></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              </section>
-            ) : (
-              <section className="detail-panel" aria-labelledby="sources-title">
-                <div className="panel-header">
-                  <div>
-                    <h2 id="sources-title">Tipos de afiliación</h2>
-                    <p>Catálogo fijo del sistema; agregar uno nuevo requiere un cambio de esquema, no solo de datos.</p>
-                  </div>
-                </div>
-                <div className="source-pill-list">
-                  {affiliationSources.map((source) => (
-                    <span className={`source-label source-${source}`} key={source}>{sourceLabels[source]}</span>
-                  ))}
-                </div>
-              </section>
+              </CatalogPanel>
             )}
           </div>
         </>

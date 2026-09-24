@@ -4,7 +4,7 @@ import Link from "next/link";
 import { DataSourceBadge } from "@/components/data-source-badge";
 import { Icon } from "@/components/icons";
 import { Pagination } from "@/components/pagination";
-import { formatCurrency, formatDate, formatPeriod, paymentStatusLabels, sourceLabels } from "@/features/affiliates/format";
+import { affiliationSources, formatCurrency, formatDate, formatPeriod, formatReceiptNumber, paymentStatusLabels, sourceLabels } from "@/features/affiliates/format";
 import { countPayments, getPaymentTotals, listPaymentPeriods, listPayments } from "@/features/affiliates/repository";
 import type { AffiliationSource, PaymentStatus } from "@/features/affiliates/types";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
@@ -90,12 +90,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Sea
             <span>Fuente</span>
             <select name="source" defaultValue={source}>
               <option value="all">Todas</option>
-              <option value="activo">Activo</option>
-              <option value="casur">CASUR</option>
-              <option value="tegen">TEGEN</option>
-              <option value="particular">Particular</option>
-              <option value="inpec">INPEC</option>
-              <option value="ordisponal">ORDISPONAL</option>
+              {affiliationSources.map((value) => <option key={value} value={value}>{sourceLabels[value]}</option>)}
             </select>
           </label>
           <label>
@@ -114,7 +109,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Sea
         {payments.length ? (
           <div className="data-table-wrap">
             <table className="data-table">
-              <thead><tr><th>Titular</th><th>Documento</th><th>Periodo</th><th>Fuente</th><th>Valor</th><th>Estado</th><th>Fecha de pago</th><th>Observación</th><th>Soporte</th></tr></thead>
+              <thead><tr><th>Titular</th><th>Documento</th><th>Periodo</th><th>Fuente</th><th>Valor</th><th>Método</th><th>Estado</th><th>Fecha de pago</th><th>Observación</th><th>Soporte</th><th>Recibo</th></tr></thead>
               <tbody>
                 {payments.map((payment) => (
                   <tr key={payment.id}>
@@ -123,12 +118,18 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Sea
                     <td className="sentence-case">{formatPeriod(payment.period)}</td>
                     <td><span className={`source-label source-${payment.source}`}>{sourceLabels[payment.source]}</span></td>
                     <td className="mono-value">{formatCurrency(payment.amount)}</td>
+                    <td>{payment.paymentMethod ?? "—"}</td>
                     <td><span className={`payment-badge payment-${payment.status}`}>{paymentStatusLabels[payment.status]}</span></td>
                     <td>{formatDate(payment.paidOn)}</td>
                     <td>{payment.observation ?? "Sin observaciones"}</td>
                     <td>
                       {payment.supportDocumentId ? (
                         <Link className="row-action" href={`/afiliados/${payment.affiliateId}/documentos/${payment.supportDocumentId}`} target="_blank">Ver</Link>
+                      ) : "—"}
+                    </td>
+                    <td>
+                      {payment.receiptId && payment.receiptNumber ? (
+                        <Link className="row-action" href={`/pagos/recibos/${payment.receiptId}`} target="_blank">{formatReceiptNumber(payment.receiptNumber)}</Link>
                       ) : "—"}
                     </td>
                   </tr>

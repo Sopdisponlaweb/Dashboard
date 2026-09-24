@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { createBeneficiary } from "@/features/beneficiaries/actions";
 import { BeneficiaryForm } from "@/features/beneficiaries/beneficiary-form";
 import type { BeneficiaryFormValues } from "@/features/beneficiaries/validation";
-import { getFullName } from "@/features/affiliates/format";
+import { getFullName, todayInBogota } from "@/features/affiliates/format";
 import { getAffiliateById } from "@/features/affiliates/repository";
 import { listMunicipalities } from "@/features/catalogs/repository";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
@@ -34,7 +34,7 @@ export default async function NewBeneficiaryPage({ params }: NewBeneficiaryPageP
     birthDate: "",
     phone: "",
     email: "",
-    joinedOn: affiliate.joinedOn,
+    joinedOn: todayInBogota(),
     status: "active",
     deceasedOn: "",
     deathMunicipalityId: "",

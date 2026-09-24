@@ -1,3 +1,5 @@
+import { affiliationSources } from "@/features/affiliates/format";
+import type { AffiliationSource } from "@/features/affiliates/types";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 
@@ -102,6 +104,34 @@ export async function listPoliceRanks(): Promise<PoliceRank[]> {
   }));
 }
 
+export type PaymentMethod = {
+  id: string;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+export async function listPaymentMethods({ activeOnly = false } = {}): Promise<PaymentMethod[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const supabase = await createClient();
+  let query = supabase
+    .from("payment_methods")
+    .select("id, name, sort_order, is_active")
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true });
+  if (activeOnly) query = query.eq("is_active", true);
+
+  const { data, error } = await query;
+  if (error) throw new Error(`No fue posible cargar los métodos de pago: ${error.message}`);
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    sortOrder: row.sort_order,
+    isActive: row.is_active,
+  }));
+}
+
 export async function canManageSettings(): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
@@ -109,4 +139,20 @@ export async function canManageSettings(): Promise<boolean> {
   const { data, error } = await supabase.rpc("has_permission", { permission_key: "settings.manage" });
   if (error) return false;
   return Boolean(data);
+}
+
+export type AffiliationSourceUsage = { source: AffiliationSource; current: number; total: number };
+
+/** Affiliates per affiliation type: current (not deceased) and all-time. */
+export async function countAffiliatesBySource(): Promise<AffiliationSourceUsage[]> {
+  if (!isSupabaseConfigured()) return affiliationSources.map((source) => ({ source, current: 0, total: 0 }));
+
+  const supabase = await createClient();
+  return Promise.all(affiliationSources.map(async (source) => {
+    const [current, total] = await Promise.all([
+      supabase.from("affiliates").select("id", { count: "exact", head: true }).eq("source", source).neq("status", "deceased"),
+      supabase.from("affiliates").select("id", { count: "exact", head: true }).eq("source", source),
+    ]);
+    return { source, current: current.count ?? 0, total: total.count ?? 0 };
+  }));
 }

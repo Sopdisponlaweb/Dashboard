@@ -6,6 +6,7 @@ import { useActionState, useState } from "react";
 import { Icon } from "@/components/icons";
 import type { Municipality, PoliceRank, PoliceRankCategory } from "@/features/catalogs/repository";
 
+import { affiliateStatuses, affiliationSources, describeWaitingPeriod, sourceLabels, sourceUsesPoliceRank, statusLabels } from "./format";
 import { initialAffiliateActionState, type AffiliateActionState } from "./form-state";
 import type { AffiliateFormField, AffiliateFormValues } from "./validation";
 
@@ -48,6 +49,11 @@ export function AffiliateForm({
   const [state, formAction, pending] = useActionState(action, initialAffiliateActionState);
   const values = state.values ?? initialValues;
   const [status, setStatus] = useState(values.status);
+  const [source, setSource] = useState(values.source);
+  const [joinedOn, setJoinedOn] = useState(values.joinedOn);
+  // Kept while the rank is disabled so switching back to a police type restores it.
+  const [policeRankId, setPoliceRankId] = useState(values.policeRankId);
+  const usesPoliceRank = sourceUsesPoliceRank(source);
   const isDeceased = status === "deceased";
   const departments = Array.from(new Set(municipalities.map((m) => m.department))).sort((a, b) => a.localeCompare(b, "es"));
   const [deathDepartment, setDeathDepartment] = useState(() => {
@@ -172,49 +178,27 @@ export function AffiliateForm({
         <div className="field-grid field-grid-three">
           <label className="form-field">
             <span>Tipo de afiliación <em>*</em></span>
-            <select name="source" defaultValue={values.source} required {...fieldProps("source")}>
-              <option value="particular">Particular</option>
-              <option value="activo">Activo</option>
-              <option value="casur">CASUR</option>
-              <option value="tegen">TEGEN</option>
-              <option value="inpec">INPEC</option>
-              <option value="ordisponal">ORDISPONAL</option>
+            <select
+              name="source"
+              value={source}
+              onChange={(event) => setSource(event.target.value as AffiliateFormValues["source"])}
+              required
+              {...fieldProps("source")}
+            >
+              {affiliationSources.map((value) => <option key={value} value={value}>{sourceLabels[value]}</option>)}
             </select>
             {error("source")}
           </label>
           <label className="form-field">
-            <span>Fecha de afiliación <em>*</em></span>
-            <input name="joinedOn" type="date" defaultValue={values.joinedOn} required {...fieldProps("joinedOn")} />
-            <small>La cobertura total se calcula automáticamente a los seis meses.</small>
-            {error("joinedOn")}
-          </label>
-          <label className="form-field">
-            <span>Estado <em>*</em></span>
-            <select
-              name="status"
-              value={status}
-              onChange={(event) => setStatus(event.target.value as AffiliateFormValues["status"])}
-              required
-              {...fieldProps("status")}
-            >
-              <option value="active">Activo</option>
-              <option value="inactive">Inactivo</option>
-              <option value="suspended">Suspendido</option>
-              <option value="deceased">Fallecido</option>
-            </select>
-            <small>Inactividad y suspensión por mora se automatizarán con los pagos.</small>
-            {error("status")}
-          </label>
-          <label className="form-field">
-            <span>Fecha de fallecimiento{isDeceased ? <em> *</em> : null}</span>
-            <input name="deceasedOn" type="date" defaultValue={values.deceasedOn} disabled={!isDeceased} {...fieldProps("deceasedOn")} />
-            <small>Solo se permite cuando el estado es fallecido.</small>
-            {error("deceasedOn")}
-          </label>
-          <label className="form-field">
             <span>Rango de policía</span>
-            <select name="policeRankId" defaultValue={values.policeRankId} {...fieldProps("policeRankId")}>
-              <option value="">Sin registrar</option>
+            <select
+              name="policeRankId"
+              value={usesPoliceRank ? policeRankId : ""}
+              onChange={(event) => setPoliceRankId(event.target.value)}
+              disabled={!usesPoliceRank}
+              {...fieldProps("policeRankId")}
+            >
+              <option value="">{usesPoliceRank ? "Sin registrar" : "No aplica"}</option>
               {policeRankCategoryOptions.map(({ value, label }) => {
                 const ranksInCategory = policeRanks.filter((rank) => rank.category === value && rank.isActive);
                 if (!ranksInCategory.length) return null;
@@ -227,7 +211,34 @@ export function AffiliateForm({
                 );
               })}
             </select>
+            <small>Solo aplica a PERSONAL ACTIVO, CASUR y TEGEN.</small>
             {error("policeRankId")}
+          </label>
+          <label className="form-field">
+            <span>Fecha de afiliación <em>*</em></span>
+            <input name="joinedOn" type="date" defaultValue={values.joinedOn} onChange={(event) => setJoinedOn(event.target.value)} required {...fieldProps("joinedOn")} />
+            <small>{describeWaitingPeriod(joinedOn)}</small>
+            {error("joinedOn")}
+          </label>
+          <label className="form-field">
+            <span>Estado <em>*</em></span>
+            <select
+              name="status"
+              value={status}
+              onChange={(event) => setStatus(event.target.value as AffiliateFormValues["status"])}
+              required
+              {...fieldProps("status")}
+            >
+              {affiliateStatuses.map((value) => <option key={value} value={value}>{statusLabels[value]}</option>)}
+            </select>
+            <small>La suspensión (3 meses sin pago) y el retiro (6 meses) se aplican automáticamente según los pagos.</small>
+            {error("status")}
+          </label>
+          <label className="form-field">
+            <span>Fecha de fallecimiento{isDeceased ? <em> *</em> : null}</span>
+            <input name="deceasedOn" type="date" defaultValue={values.deceasedOn} disabled={!isDeceased} {...fieldProps("deceasedOn")} />
+            <small>Solo se permite cuando el estado es fallecido.</small>
+            {error("deceasedOn")}
           </label>
         </div>
       </section>
