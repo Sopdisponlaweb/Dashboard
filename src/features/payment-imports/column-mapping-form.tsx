@@ -17,7 +17,8 @@ const fieldLabels: Record<FieldKey, string> = {
 
 const maxFileSizeBytes = 5 * 1024 * 1024;
 const maxRows = 5000;
-const PAGE_SIZE_OPTIONS = [100, 500, 1000] as const;
+// Start with 10 rows so the table fits on screen; larger sizes stay one click away.
+const PAGE_SIZE_OPTIONS = [10, 100, 500, 1000] as const;
 
 type ColumnMappingFormProps = {
   formAction: (formData: FormData) => void;
@@ -33,7 +34,7 @@ export function ColumnMappingForm({ formAction, pending, defaultSource, defaultP
   const [grid, setGrid] = useState<SpreadsheetGrid | null>(null);
   const [hasHeaderRow, setHasHeaderRow] = useState(true);
   const [mapping, setMapping] = useState<Record<number, FieldKey | "">>({});
-  const [pageSize, setPageSize] = useState<number | "all">(100);
+  const [pageSize, setPageSize] = useState<number | "all">(PAGE_SIZE_OPTIONS[0]);
   const [page, setPage] = useState(1);
 
   async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {

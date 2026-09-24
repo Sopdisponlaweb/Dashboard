@@ -11,15 +11,32 @@ type UploadDocumentAction = (
   formData: FormData,
 ) => Promise<DocumentUploadState>;
 
+/** A person the file can belong to; value "" is the titular. */
+export type DocumentOwnerOption = { value: string; label: string };
+
 type UploadDocumentFormProps = {
   action: UploadDocumentAction;
+  /** Shows a "Pertenece a" selector (titular and beneficiaries). */
+  owners?: DocumentOwnerOption[];
+  /** Fixes the owner to one beneficiary (no selector). */
+  beneficiaryId?: string;
 };
 
-export function UploadDocumentForm({ action }: UploadDocumentFormProps) {
+export function UploadDocumentForm({ action, owners, beneficiaryId }: UploadDocumentFormProps) {
   const [state, formAction, pending] = useActionState<DocumentUploadState, FormData>(action, initialDocumentUploadState);
+  const showOwners = !beneficiaryId && owners && owners.length > 1;
 
   return (
     <form action={formAction} className="upload-document-form">
+      {beneficiaryId ? <input type="hidden" name="beneficiaryId" value={beneficiaryId} /> : null}
+      {showOwners ? (
+        <label className="form-field form-field-compact">
+          <span>Pertenece a <em>*</em></span>
+          <select name="beneficiaryId" defaultValue={state.beneficiaryId ?? ""} key={state.beneficiaryId ?? ""}>
+            {owners.map((owner) => <option key={owner.value} value={owner.value}>{owner.label}</option>)}
+          </select>
+        </label>
+      ) : null}
       <label className="form-field form-field-compact">
         <span>Tipo de documento <em>*</em></span>
         <select name="kind" defaultValue={state.kind ?? "support"} required>
@@ -34,9 +51,9 @@ export function UploadDocumentForm({ action }: UploadDocumentFormProps) {
         <input name="title" defaultValue={state.title} placeholder="Ej. Copia de cédula" required />
       </label>
       <label className="form-field form-field-compact">
-        <span>Archivo PDF <em>*</em></span>
-        <input name="file" type="file" accept="application/pdf,.pdf" required />
-        <small>Máximo 15 MB, solo PDF.</small>
+        <span>Archivo <em>*</em></span>
+        <input name="file" type="file" accept="application/pdf,.pdf,image/png,.png,image/jpeg,.jpg,.jpeg" required />
+        <small>PDF, PNG o JPG. Máximo 15 MB.</small>
       </label>
 
       {state.status === "error" && state.message ? (

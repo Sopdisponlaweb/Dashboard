@@ -46,6 +46,8 @@ export type Credit = {
   requestedOn: string;
   observations: string | null;
   installments: CreditInstallment[];
+  /** Paz y salvo issued for this credit, if any. */
+  clearance?: { id: string; number: number; issuedOn: string } | null;
   inheritedFromAffiliateId?: string | null;
   inheritedFromName?: string | null;
 };
@@ -57,6 +59,7 @@ export type MemberDocument = {
   uploadedOn: string;
   sizeLabel: string;
   storagePath: string;
+  mimeType?: string;
 };
 
 export type Beneficiary = {
@@ -89,6 +92,8 @@ export type Beneficiary = {
   inheritedFromName?: string | null;
   /** Set on the deceased's record when this beneficiary became the successor titular. */
   promotedToAffiliateId?: string | null;
+  /** The beneficiary's own files (identity, death certificate…). */
+  documents?: MemberDocument[];
 };
 
 export type Affiliate = {
@@ -144,6 +149,9 @@ export type AffiliateFilters = {
   succession?: "all" | "pending" | "succeeded" | "successor";
   /** waiting: active and still in the waiting period · full: active with full coverage. */
   coverage?: "all" | "waiting" | "full";
+  /** Affiliation date range [from, to), YYYY-MM-DD. */
+  joinedFrom?: string;
+  joinedTo?: string;
   page?: number;
   pageSize?: number;
 };

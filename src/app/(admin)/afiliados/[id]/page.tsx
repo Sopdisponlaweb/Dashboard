@@ -4,10 +4,12 @@ import { notFound } from "next/navigation";
 
 import { Icon } from "@/components/icons";
 import { CoverageBadge, StatusBadge } from "@/features/affiliates/affiliate-badges";
-import { documentKindLabels, formatCurrency, formatDate, getCoverageState, getFullName, getInitials, getWaitingPeriodProgress, WAITING_PERIOD_MONTHS, sourceLabels } from "@/features/affiliates/format";
+import { formatCurrency, formatDate, formatPeriod, getCoverageState, getFullName, getInitials, getWaitingPeriodProgress, WAITING_PERIOD_MONTHS, sourceLabels } from "@/features/affiliates/format";
 import { getAffiliateById } from "@/features/affiliates/repository";
 import { PaymentsHistoryPanel } from "@/features/affiliates/payments-history-panel";
+import { computePaymentGaps, gapWindowStart, recentMissingMonths } from "@/features/payments/gaps";
 import { uploadMemberDocument } from "@/features/member-documents/actions";
+import { DocumentList } from "@/features/member-documents/document-list";
 import { UploadDocumentForm } from "@/features/member-documents/upload-document-form";
 import { createAffiliateNote } from "@/features/member-notes/actions";
 import { NotesPanel } from "@/features/member-notes/notes-panel";
@@ -99,7 +101,23 @@ export default async function AffiliateDetailPage({ params, searchParams }: Affi
     ? { id: successions.asDeceased.successorId, name: successions.asDeceased.successorName }
     : null;
   const historicalBeneficiaries = affiliate.beneficiaries.filter((beneficiary) => beneficiary.status === "deceased");
+  // The record holds the titular's files plus each beneficiary's own (deceased ones too: death certificates).
+  const beneficiariesWithDocuments = affiliate.beneficiaries.filter((beneficiary) => beneficiary.documents?.length);
+  const documentCount = affiliate.documents.length
+    + beneficiariesWithDocuments.reduce((total, beneficiary) => total + (beneficiary.documents?.length ?? 0), 0);
+  const documentOwners = [
+    { value: "", label: `Titular · ${fullName}` },
+    ...affiliate.beneficiaries
+      .filter((beneficiary) => !beneficiary.promotedToAffiliateId)
+      .map((beneficiary) => ({
+        value: beneficiary.id,
+        label: `${getFullName(beneficiary)} · ${beneficiary.relationship}${beneficiary.status === "deceased" ? " (fallecido)" : ""}`,
+      })),
+  ];
   const resultMessage = beneficiaryResultMessages[firstValue(result) ?? ""];
+  // Months without payment between two paid months, in the last 12 months (older ones show in the Pagos tab).
+  const currentMonth = today.slice(0, 7);
+  const recentGapMonths = recentMissingMonths(computePaymentGaps(affiliate.payments), gapWindowStart(currentMonth), currentMonth);
 
   function tabHref(nextTab: AffiliateTab) {
     return `/afiliados/${id}?tab=${nextTab}`;
@@ -143,6 +161,22 @@ export default async function AffiliateDetailPage({ params, searchParams }: Affi
 
       <SuccessionBanner affiliateId={affiliate.id} isDeceased={affiliate.status === "deceased"} successions={successions} isAdmin={isAdmin} />
 
+      {recentGapMonths.length ? (
+        <section className="coverage-notice gap-notice" aria-label="Pagos sin continuidad">
+          <span><Icon name="activity" size={21} /></span>
+          <div>
+            <strong>
+              Pagos sin continuidad · {recentGapMonths.length} {recentGapMonths.length === 1 ? "mes" : "meses"} sin pago registrado en el último año
+            </strong>
+            <p>
+              <span className="sentence-case">{recentGapMonths.slice(0, 4).map((period) => formatPeriod(period)).join(", ")}</span>
+              {recentGapMonths.length > 4 ? ` y ${recentGapMonths.length - 4} más` : ""}. Revisa si el mes se digitó mal o si el pago está pendiente.
+            </p>
+          </div>
+          <Link className="panel-link" href={tabHref("pagos")}>Ver en pagos <Icon name="arrow" size={14} /></Link>
+        </section>
+      ) : null}
+
       {waiting ? (
         <section className="coverage-notice" aria-label="Periodo inicial de cobertura">
           <span><Icon name="calendar" size={21} /></span>
@@ -160,7 +194,7 @@ export default async function AffiliateDetailPage({ params, searchParams }: Affi
         <article><span>Fecha de afiliación</span><strong>{formatDate(affiliate.joinedOn)}</strong></article>
         <article><span>Último pago</span><strong>{formatDate(affiliate.lastPaymentOn)}</strong></article>
         <article><span>Beneficiarios vigentes</span><strong>{currentBeneficiaries.length}</strong></article>
-        <article><span>Documentos</span><strong>{affiliate.documents.length}</strong></article>
+        <article><span>Documentos</span><strong>{documentCount}</strong></article>
       </section>
 
       <nav className="tab-bar" aria-label="Secciones del afiliado">
@@ -168,7 +202,7 @@ export default async function AffiliateDetailPage({ params, searchParams }: Affi
         <Link className={tabClass("beneficiarios")} href={tabHref("beneficiarios")}>Beneficiarios ({currentBeneficiaries.length})</Link>
         <Link className={tabClass("pagos")} href={tabHref("pagos")}>Pagos ({affiliate.payments.length})</Link>
         <Link className={tabClass("creditos")} href={tabHref("creditos")}>Créditos</Link>
-        <Link className={tabClass("documentos")} href={tabHref("documentos")}>Documentos ({affiliate.documents.length})</Link>
+        <Link className={tabClass("documentos")} href={tabHref("documentos")}>Documentos ({documentCount})</Link>
         <Link className={tabClass("observaciones")} href={tabHref("observaciones")}>Observaciones ({notes.length})</Link>
         <Link className={tabClass("historial")} href={tabHref("historial")}>Historial</Link>
       </nav>
@@ -228,7 +262,7 @@ export default async function AffiliateDetailPage({ params, searchParams }: Affi
                   >
                     <span className="person-initials">{getInitials(beneficiary)}</span>
                     <div>
-                      <strong>{getFullName(beneficiary)}</strong>
+                      <strong><Link className="person-link" href={`/afiliados/${affiliate.id}/beneficiarios/${beneficiary.id}`}>{getFullName(beneficiary)}</Link></strong>
                       <span>{beneficiary.relationship} · {beneficiary.documentNumber ?? "Documento pendiente"}</span>
                       {beneficiary.inheritedFromAffiliateId ? (
                         <span className="inherited-tag">
@@ -240,7 +274,7 @@ export default async function AffiliateDetailPage({ params, searchParams }: Affi
                       <StatusBadge status={beneficiary.status} />
                       <CoverageBadge status={beneficiary.status} fullCoverageOn={beneficiary.fullCoverageOn} />
                     </p>
-                    <Link className="row-action" href={`/afiliados/${affiliate.id}/beneficiarios/${beneficiary.id}/editar`} aria-label={`Editar a ${beneficiary.firstNames} ${beneficiary.lastNames}`}>Editar</Link>
+                    <Link className="row-action" href={`/afiliados/${affiliate.id}/beneficiarios/${beneficiary.id}`} aria-label={`Ver la ficha de ${beneficiary.firstNames} ${beneficiary.lastNames}`}>Ver ficha <Icon name="arrow" size={15} /></Link>
                   </article>
                 ))}
               </div>
@@ -264,7 +298,7 @@ export default async function AffiliateDetailPage({ params, searchParams }: Affi
                       || beneficiary.deathServiceProvided || beneficiary.deathServiceAmount || beneficiary.successorBank || beneficiary.successorAccountNumber;
                     return (
                       <p key={beneficiary.id}>
-                        <strong>{beneficiary.firstNames} {beneficiary.lastNames}</strong>
+                        <strong><Link className="person-link" href={`/afiliados/${affiliate.id}/beneficiarios/${beneficiary.id}`}>{beneficiary.firstNames} {beneficiary.lastNames}</Link></strong>
                         <span>{beneficiary.relationship} · Fallecimiento: {formatDate(beneficiary.deceasedOn)}</span>
                         {hasDeathDetails ? (
                           <span className="historical-death-details">
@@ -355,21 +389,21 @@ export default async function AffiliateDetailPage({ params, searchParams }: Affi
           </section>
         ) : tab === "documentos" ? (
           <section className="detail-panel">
-            <div className="aside-title"><span><Icon name="file" size={18} /></span><div><h2>Expediente PDF</h2><p>Archivos privados del afiliado</p></div></div>
-            {affiliate.documents.length ? (
-              <ul className="document-list">
-                {affiliate.documents.map((document) => (
-                  <li key={document.id}>
-                    <span><Icon name="file" size={17} /></span>
-                    <div><strong>{document.title}</strong><small>{documentKindLabels[document.kind]} · {formatDate(document.uploadedOn)} · {document.sizeLabel}</small></div>
-                    {isSupabaseConfigured() ? (
-                      <Link className="row-action" href={`/afiliados/${affiliate.id}/documentos/${document.id}`} target="_blank">Ver</Link>
-                    ) : <em>Local</em>}
-                  </li>
-                ))}
-              </ul>
-            ) : <p className="inline-empty">Aún no hay documentos cargados.</p>}
-            <UploadDocumentForm action={uploadMemberDocument.bind(null, affiliate.id)} />
+            <div className="aside-title"><span><Icon name="file" size={18} /></span><div><h2>Expediente</h2><p>Archivos privados del titular y de cada beneficiario</p></div></div>
+            <section className="document-group" aria-label={`Documentos de ${fullName}`}>
+              <h3>Titular · {fullName}</h3>
+              <DocumentList documents={affiliate.documents} affiliateId={affiliate.id} emptyText="El titular aún no tiene documentos cargados." />
+            </section>
+            {beneficiariesWithDocuments.map((beneficiary) => (
+              <section className="document-group" key={beneficiary.id} aria-label={`Documentos de ${getFullName(beneficiary)}`}>
+                <h3>
+                  {getFullName(beneficiary)} · {beneficiary.relationship}
+                  {beneficiary.status === "deceased" ? <span className="document-group-tag">Fallecido</span> : null}
+                </h3>
+                <DocumentList documents={beneficiary.documents ?? []} affiliateId={affiliate.id} emptyText="" />
+              </section>
+            ))}
+            <UploadDocumentForm action={uploadMemberDocument.bind(null, affiliate.id)} owners={documentOwners} />
           </section>
         ) : tab === "observaciones" ? (
           <section className="detail-panel notes-panel">

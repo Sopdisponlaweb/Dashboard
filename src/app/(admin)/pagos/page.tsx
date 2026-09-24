@@ -7,6 +7,7 @@ import { Pagination } from "@/components/pagination";
 import { affiliationSources, formatCurrency, formatDate, formatPeriod, formatReceiptNumber, paymentStatusLabels, sourceLabels } from "@/features/affiliates/format";
 import { countPayments, getPaymentTotals, listPaymentPeriods, listPayments } from "@/features/affiliates/repository";
 import type { AffiliationSource, PaymentStatus } from "@/features/affiliates/types";
+import { PaymentsTabs } from "@/features/payments/payments-tabs";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 export const metadata: Metadata = { title: "Pagos" };
@@ -58,6 +59,8 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Sea
           <Link className="primary-button" href="/importaciones"><Icon name="upload" size={16} /> Cargar lote de pagos</Link>
         </div>
       </header>
+
+      <PaymentsTabs active="pagos" />
 
       <section className="directory-summary" aria-label="Resumen de pagos">
         <article><span>Pagados</span><strong>{formatCurrency(totals.paid)}</strong></article>

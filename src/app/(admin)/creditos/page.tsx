@@ -4,10 +4,11 @@ import Link from "next/link";
 import { DataSourceBadge } from "@/components/data-source-badge";
 import { Icon } from "@/components/icons";
 import { Pagination } from "@/components/pagination";
-import { creditStatusLabels, formatCurrency, formatDate, formatRate } from "@/features/affiliates/format";
+import { creditStatusLabels, formatClearanceNumber, formatCurrency, formatDate, formatRate } from "@/features/affiliates/format";
 import { countCredits, listCredits } from "@/features/affiliates/repository";
 import type { CreditStatus } from "@/features/affiliates/types";
 import { remainingBalance } from "@/features/credits/calculations";
+import { CreditsTabs } from "@/features/credits/credits-tabs";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 export const metadata: Metadata = { title: "Créditos" };
@@ -47,6 +48,8 @@ export default async function CreditsPage({ searchParams }: { searchParams: Sear
         </div>
       </header>
 
+      <CreditsTabs active="creditos" />
+
       <section className="directory-panel" aria-labelledby="credits-directory-title">
         <div className="directory-panel-header">
           <div>
@@ -74,7 +77,7 @@ export default async function CreditsPage({ searchParams }: { searchParams: Sear
         {credits.length ? (
           <div className="data-table-wrap">
             <table className="data-table">
-              <thead><tr><th>Titular</th><th>Documento</th><th>Base</th><th>Tasa</th><th>Plazo</th><th>Cuota</th><th>Saldo pendiente</th><th>Estado</th><th>Fecha solicitud</th></tr></thead>
+              <thead><tr><th>Titular</th><th>Documento</th><th>Base</th><th>Tasa</th><th>Plazo</th><th>Cuota</th><th>Saldo pendiente</th><th>Estado</th><th>Fecha solicitud</th><th>Paz y salvo</th></tr></thead>
               <tbody>
                 {credits.map((credit) => {
                   const balance = remainingBalance(credit, credit.installments);
@@ -89,6 +92,15 @@ export default async function CreditsPage({ searchParams }: { searchParams: Sear
                       <td className="mono-value">{formatCurrency(balance.remainingTotal)}</td>
                       <td><span className={`payment-badge credit-${credit.status}`}>{creditStatusLabels[credit.status]}</span></td>
                       <td>{formatDate(credit.requestedOn)}</td>
+                      <td>
+                        {credit.clearance ? (
+                          <a className="row-action" href={`/afiliados/${credit.affiliateId}/creditos/${credit.id}/paz-y-salvo`} target="_blank" rel="noopener">
+                            {formatClearanceNumber(credit.clearance.number)}
+                          </a>
+                        ) : credit.status === "paid" || credit.status === "forgiven" ? (
+                          <Link className="row-action row-action-muted" href={`/afiliados/${credit.affiliateId}?tab=creditos`}>Emitir en la ficha</Link>
+                        ) : "—"}
+                      </td>
                     </tr>
                   );
                 })}

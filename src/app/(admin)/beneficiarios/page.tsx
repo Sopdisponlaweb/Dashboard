@@ -117,7 +117,7 @@ export default async function BeneficiariesPage({ searchParams }: { searchParams
                   return (
                     <tr key={beneficiary.id} className={waiting ? "is-waiting" : undefined}>
                       <td>
-                        <div className="person-cell"><span className="person-initials">{getInitials(beneficiary)}</span><span><strong>{getFullName(beneficiary)}</strong>{waiting ? <em>Vinculación nueva</em> : null}</span></div>
+                        <div className="person-cell"><span className="person-initials">{getInitials(beneficiary)}</span><span><strong><Link className="person-link" href={`/afiliados/${beneficiary.affiliateId}/beneficiarios/${beneficiary.id}`}>{getFullName(beneficiary)}</Link></strong>{waiting ? <em>Vinculación nueva</em> : null}</span></div>
                       </td>
                       <td><span className="mono-value">{beneficiary.documentNumber ?? "Sin registrar"}</span></td>
                       <td>{beneficiary.relationship}</td>
@@ -129,7 +129,7 @@ export default async function BeneficiariesPage({ searchParams }: { searchParams
                         </div>
                       </td>
                       <td>{formatDate(beneficiary.joinedOn)}</td>
-                      <td>{beneficiary.status !== "deceased" ? <Link className="row-action" href={`/afiliados/${beneficiary.affiliateId}/beneficiarios/${beneficiary.id}/editar`}>Editar <Icon name="arrow" size={15} /></Link> : null}</td>
+                      <td><Link className="row-action" href={`/afiliados/${beneficiary.affiliateId}/beneficiarios/${beneficiary.id}`}>Ver ficha <Icon name="arrow" size={15} /></Link></td>
                     </tr>
                   );
                 })}

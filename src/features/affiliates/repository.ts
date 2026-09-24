@@ -43,6 +43,7 @@ function mapBeneficiaryRow(row: Record<string, unknown>): Beneficiary {
     inheritedFromAffiliateId: (row.inherited_from_affiliate_id as string | null) ?? null,
     inheritedFromName: personNameOf(row.inherited_from),
     promotedToAffiliateId: (row.promoted_to_affiliate_id as string | null) ?? null,
+    documents: ((row.member_documents as Record<string, unknown>[] | null) ?? []).map(mapDocumentRow),
   };
 }
 
@@ -81,8 +82,15 @@ function mapInstallmentRow(row: Record<string, unknown>): CreditInstallment {
   };
 }
 
+function mapClearance(value: unknown): Credit["clearance"] {
+  // One-to-one (unique credit_id): PostgREST returns an object, or an array in older shapes.
+  const row = (Array.isArray(value) ? value[0] : value) as Record<string, unknown> | null | undefined;
+  return row ? { id: row.id as string, number: Number(row.clearance_number), issuedOn: row.issued_on as string } : null;
+}
+
 function mapCreditRow(row: Record<string, unknown>): Credit {
   return {
+    clearance: mapClearance(row.credit_clearances),
     id: row.id as string,
     previousCreditId: (row.previous_credit_id as string | null) ?? null,
     disbursedAmount: Number(row.disbursed_amount),
@@ -111,6 +119,7 @@ function mapDocumentRow(row: Record<string, unknown>): MemberDocument {
     uploadedOn: row.uploaded_at ? (row.uploaded_at as string).slice(0, 10) : "",
     sizeLabel: sizeLabel(Number(row.size_bytes ?? 0)),
     storagePath: row.storage_path as string,
+    mimeType: (row.mime_type as string | undefined) ?? undefined,
   };
 }
 
@@ -194,14 +203,16 @@ const affiliateSelect = `
     death_service_amount, successor_bank, successor_account_number, successor_account_type,
     inherited_from_affiliate_id, promoted_to_affiliate_id,
     inherited_from:affiliates!beneficiaries_inherited_from_affiliate_id_fkey(first_names, last_names),
-    death_municipality:municipalities!death_municipality_id(name, department)),
+    death_municipality:municipalities!death_municipality_id(name, department),
+    member_documents!member_documents_beneficiary_id_fkey(id, kind, title, uploaded_at, size_bytes, storage_path, mime_type)),
   payments(id, period_start, paid_on, amount, source, status, observations, support_document_id, receipt_id,
     payment_method:payment_methods(name), receipt:payment_receipts(receipt_number)),
-  member_documents(id, kind, title, uploaded_at, size_bytes, storage_path),
+  member_documents!member_documents_affiliate_id_fkey(id, kind, title, uploaded_at, size_bytes, storage_path, mime_type),
   credits!credits_affiliate_id_fkey(id, previous_credit_id, disbursed_amount, rolled_over_capital, rolled_over_interest,
     principal_base, interest_rate, term_months, interest_amount, total_amount, installment_amount,
     status, requested_on, observations, inherited_from_affiliate_id,
     inherited_from:affiliates!credits_inherited_from_affiliate_id_fkey(first_names, last_names),
+    credit_clearances(id, clearance_number, issued_on),
     credit_installments(id, paid_on, amount, capital_portion, interest_portion, observation,
       receipt_number, support_document_id, payment_method:payment_methods(name)))
 `;
@@ -285,6 +296,15 @@ function applyCoverageFilter<Q extends { eq: any; gt: any; lte: any }>(q: Q, cov
   return q;
 }
 
+/** Date range [from, to) on a date column; both ends optional (YYYY-MM-DD). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyDateRange<Q extends { gte: any; lt: any }>(q: Q, column: string, from?: string, to?: string): Q {
+  let next = q;
+  if (from) next = next.gte(column, from);
+  if (to) next = next.lt(column, to);
+  return next;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applyAffiliateFilters(query: any, filters: AffiliateFilters): any {
   const { status = "all", source = "all", query: search = "", excludeDeceased = false } = filters;
@@ -302,6 +322,7 @@ function applyAffiliateFilters(query: any, filters: AffiliateFilters): any {
   }
   // A future affiliation date is bad migrated data, not a waiting period.
   q = applyCoverageFilter(q, filters.coverage);
+  q = applyDateRange(q, "joined_on", filters.joinedFrom, filters.joinedTo);
   if (search.trim()) {
     const like = `%${search.trim()}%`;
     q = q.or(`first_names.ilike.${like},last_names.ilike.${like},document_number.ilike.${like}`);
@@ -418,6 +439,10 @@ export type PaymentRecord = Payment & {
 export type PaymentFilters = {
   query?: string;
   period?: string | "all";
+  /** Period range [from, to), YYYY-MM-01. */
+  periodFrom?: string;
+  periodTo?: string;
+  paymentMethodId?: string | "all";
   source?: AffiliationSource | "all";
   status?: PaymentStatus | "all";
   page?: number;
@@ -479,6 +504,8 @@ export async function listPayments(filters: PaymentFilters = {}): Promise<Paymen
     if (status !== "all") q = q.eq("status", status);
     if (source !== "all") q = q.eq("source", source);
     if (period !== "all") q = q.eq("period_start", `${period}-01`);
+    q = applyDateRange(q, "period_start", filters.periodFrom, filters.periodTo);
+    if (filters.paymentMethodId && filters.paymentMethodId !== "all") q = q.eq("payment_method_id", filters.paymentMethodId);
     if (query.trim()) {
       const like = `%${query.trim()}%`;
       q = q.or(`first_names.ilike.${like},last_names.ilike.${like},document_number.ilike.${like}`, { foreignTable: "affiliates" });
@@ -522,6 +549,8 @@ export async function countPayments(filters: PaymentFilters = {}): Promise<numbe
   if (status !== "all") q = q.eq("status", status);
   if (source !== "all") q = q.eq("source", source);
   if (period !== "all") q = q.eq("period_start", `${period}-01`);
+  q = applyDateRange(q, "period_start", filters.periodFrom, filters.periodTo);
+  if (filters.paymentMethodId && filters.paymentMethodId !== "all") q = q.eq("payment_method_id", filters.paymentMethodId);
   if (query.trim()) {
     const like = `%${query.trim()}%`;
     q = q.or(`first_names.ilike.${like},last_names.ilike.${like},document_number.ilike.${like}`, { foreignTable: "affiliates" });
@@ -573,6 +602,11 @@ export type CreditRecord = Credit & {
 export type CreditFilters = {
   query?: string;
   status?: CreditStatus | "all";
+  /** Request date range [from, to), YYYY-MM-DD. */
+  requestedFrom?: string;
+  requestedTo?: string;
+  /** issued: has a paz y salvo · none: does not. */
+  clearance?: "all" | "issued" | "none";
   page?: number;
   pageSize?: number;
 };
@@ -591,6 +625,7 @@ const creditListSelect = `
   id, previous_credit_id, disbursed_amount, rolled_over_capital, rolled_over_interest,
   principal_base, interest_rate, term_months, interest_amount, total_amount, installment_amount,
   status, requested_on, observations,
+  credit_clearances(id, clearance_number, issued_on),
   credit_installments(id, paid_on, amount, capital_portion, interest_portion, observation,
       receipt_number, support_document_id, payment_method:payment_methods(name)),
   affiliate:affiliates!credits_affiliate_id_fkey!inner(id, first_names, last_names, document_type, document_number)
@@ -630,6 +665,7 @@ export async function listCredits(filters: CreditFilters = {}): Promise<CreditRe
       .order("requested_on", { ascending: false });
 
     if (status !== "all") q = q.eq("status", status);
+    q = applyCreditReportFilters(q, filters);
     if (query.trim()) {
       const like = `%${query.trim()}%`;
       q = q.or(`first_names.ilike.${like},last_names.ilike.${like},document_number.ilike.${like}`, { foreignTable: "affiliates" });
@@ -658,6 +694,15 @@ export async function listCredits(filters: CreditFilters = {}): Promise<CreditRe
   return rows.map(mapCreditListRow);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyCreditReportFilters(query: any, filters: CreditFilters): any {
+  let q = applyDateRange(query, "requested_on", filters.requestedFrom, filters.requestedTo);
+  // The clearance is embedded in the select: filtering on the embed keeps or drops the credit.
+  if (filters.clearance === "issued") q = q.not("credit_clearances", "is", null);
+  else if (filters.clearance === "none") q = q.is("credit_clearances", null);
+  return q;
+}
+
 export async function countCredits(filters: CreditFilters = {}): Promise<number> {
   const { query = "", status = "all" } = filters;
 
@@ -666,11 +711,13 @@ export async function countCredits(filters: CreditFilters = {}): Promise<number>
   }
 
   const supabase = await createClient();
-  let q = supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q: any = supabase
     .from("credits")
-    .select("id, affiliates!credits_affiliate_id_fkey!inner(first_names,last_names,document_number)", { count: "exact", head: true });
+    .select("id, credit_clearances(id), affiliates!credits_affiliate_id_fkey!inner(first_names,last_names,document_number)", { count: "exact", head: true });
 
   if (status !== "all") q = q.eq("status", status);
+  q = applyCreditReportFilters(q, filters);
   if (query.trim()) {
     const like = `%${query.trim()}%`;
     q = q.or(`first_names.ilike.${like},last_names.ilike.${like},document_number.ilike.${like}`, { foreignTable: "affiliates" });
@@ -719,6 +766,10 @@ export type DocumentRecord = MemberDocument & {
   affiliateId: string;
   affiliateName: string;
   affiliateDocument: string;
+  /** Set when the file belongs to a beneficiary of the titular. */
+  beneficiaryId: string | null;
+  beneficiaryName: string | null;
+  beneficiaryRelationship: string | null;
 };
 
 export type DocumentFilters = {
@@ -727,12 +778,15 @@ export type DocumentFilters = {
 };
 
 function mapDocumentListRow(row: Record<string, unknown>): DocumentRecord {
-  const affiliate = row.affiliate as Record<string, unknown>;
+  const beneficiaryId = (row.beneficiary_id as string | null) ?? null;
   return {
     ...mapDocumentRow(row),
-    affiliateId: affiliate.id as string,
-    affiliateName: `${affiliate.first_names as string} ${affiliate.last_names as string}`,
-    affiliateDocument: `${affiliate.document_type as string} ${affiliate.document_number as string}`,
+    affiliateId: row.affiliate_id as string,
+    affiliateName: `${row.affiliate_first_names as string} ${row.affiliate_last_names as string}`,
+    affiliateDocument: `${row.affiliate_document_type as string} ${row.affiliate_document_number as string}`,
+    beneficiaryId,
+    beneficiaryName: beneficiaryId ? `${row.beneficiary_first_names as string} ${row.beneficiary_last_names as string}`.trim() : null,
+    beneficiaryRelationship: (row.beneficiary_relationship as string | null) ?? null,
   };
 }
 
@@ -741,16 +795,23 @@ export async function listDocuments(filters: DocumentFilters = {}): Promise<Docu
 
   if (!isSupabaseConfigured()) {
     const affiliates = await getAllAffiliates();
-    const records: DocumentRecord[] = affiliates.flatMap((affiliate) => affiliate.documents.map((document) => ({
-      ...document,
-      affiliateId: affiliate.id,
-      affiliateName: getFullName(affiliate),
-      affiliateDocument: `${affiliate.documentType} ${affiliate.documentNumber}`,
-    })));
+    const records: DocumentRecord[] = affiliates.flatMap((affiliate) => {
+      const owner = { affiliateId: affiliate.id, affiliateName: getFullName(affiliate), affiliateDocument: `${affiliate.documentType} ${affiliate.documentNumber}` };
+      return [
+        ...affiliate.documents.map((document) => ({ ...document, ...owner, beneficiaryId: null, beneficiaryName: null, beneficiaryRelationship: null })),
+        ...affiliate.beneficiaries.flatMap((beneficiary) => (beneficiary.documents ?? []).map((document) => ({
+          ...document,
+          ...owner,
+          beneficiaryId: beneficiary.id,
+          beneficiaryName: getFullName(beneficiary),
+          beneficiaryRelationship: beneficiary.relationship,
+        }))),
+      ];
+    });
 
     return records
       .filter((record) => {
-        const queryMatches = !query || normalize(`${record.affiliateName} ${record.affiliateDocument} ${record.title}`).includes(normalize(query));
+        const queryMatches = !query || normalize(`${record.affiliateName} ${record.affiliateDocument} ${record.beneficiaryName ?? ""} ${record.title}`).includes(normalize(query));
         const kindMatches = kind === "all" || record.kind === kind;
 
         return queryMatches && kindMatches;
@@ -759,20 +820,19 @@ export async function listDocuments(filters: DocumentFilters = {}): Promise<Docu
   }
 
   const supabase = await createClient();
+  // The view resolves each file's titular, also for beneficiary files, and one search text for both people.
   let q = supabase
-    .from("member_documents")
+    .from("member_document_directory")
     .select(`
-      id, kind, title, uploaded_at, size_bytes, storage_path,
-      affiliate:affiliates!inner(id, first_names, last_names, document_type, document_number)
+      id, kind, title, uploaded_at, size_bytes, storage_path, mime_type,
+      affiliate_id, affiliate_first_names, affiliate_last_names, affiliate_document_type, affiliate_document_number,
+      beneficiary_id, beneficiary_first_names, beneficiary_last_names, beneficiary_relationship
     `)
     .order("uploaded_at", { ascending: false })
     .limit(500);
 
   if (kind !== "all") q = q.eq("kind", kind);
-  if (query.trim()) {
-    const like = `%${query.trim()}%`;
-    q = q.or(`first_names.ilike.${like},last_names.ilike.${like},document_number.ilike.${like}`, { foreignTable: "affiliates" });
-  }
+  if (query.trim()) q = q.ilike("search_text", `%${query.trim()}%`);
 
   const { data, error } = await q;
   if (error) throw new Error(`No fue posible cargar documentos: ${error.message}`);
@@ -791,6 +851,11 @@ export type BeneficiaryDirectoryFilters = {
   status?: AffiliateStatus | "all";
   excludeDeceased?: boolean;
   coverage?: AffiliateFilters["coverage"];
+  /** Join date range [from, to), YYYY-MM-DD. */
+  joinedFrom?: string;
+  joinedTo?: string;
+  /** Case-insensitive exact relationship (the data mixes "HIJO" and "Hijo"). */
+  relationship?: string;
   page?: number;
   pageSize?: number;
 };
@@ -847,6 +912,7 @@ export async function listBeneficiaries(filters: BeneficiaryDirectoryFilters = {
     // A beneficiary promoted to titular by a succession is counted as titular now.
     if (excludeDeceased) q = q.is("promoted_to_affiliate_id", null);
     q = applyCoverageFilter(q, coverage);
+    q = applyBeneficiaryReportFilters(q, filters);
     if (query.trim()) {
       const like = `%${query.trim()}%`;
       q = q.or(`first_names.ilike.${like},last_names.ilike.${like},document_number.ilike.${like}`);
@@ -875,6 +941,13 @@ export async function listBeneficiaries(filters: BeneficiaryDirectoryFilters = {
   return rows.map(mapBeneficiaryListRow);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyBeneficiaryReportFilters(query: any, filters: BeneficiaryDirectoryFilters): any {
+  let q = applyDateRange(query, "joined_on", filters.joinedFrom, filters.joinedTo);
+  if (filters.relationship?.trim()) q = q.ilike("relationship", filters.relationship.trim());
+  return q;
+}
+
 export async function countBeneficiaries(filters: BeneficiaryDirectoryFilters = {}): Promise<number> {
   const { query = "", status = "all", excludeDeceased = false, coverage = "all" } = filters;
 
@@ -891,6 +964,7 @@ export async function countBeneficiaries(filters: BeneficiaryDirectoryFilters = 
   else if (excludeDeceased) q = q.neq("status", "deceased");
   if (excludeDeceased) q = q.is("promoted_to_affiliate_id", null);
   q = applyCoverageFilter(q, coverage);
+  q = applyBeneficiaryReportFilters(q, filters);
   if (query.trim()) {
     const like = `%${query.trim()}%`;
     q = q.or(`first_names.ilike.${like},last_names.ilike.${like},document_number.ilike.${like}`);

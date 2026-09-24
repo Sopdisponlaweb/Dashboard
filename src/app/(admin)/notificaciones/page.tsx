@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { DataSourceBadge } from "@/components/data-source-badge";
 import { formatDate } from "@/features/affiliates/format";
@@ -9,6 +10,7 @@ import {
   getCurrentUserId,
   listMyNotifications,
   listNotificationRecipients,
+  notificationHref,
   type NotificationLevel,
 } from "@/features/notifications/repository";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
@@ -82,6 +84,11 @@ export default async function NotificationsPage() {
                   <div>
                     <strong>{notification.title}</strong>
                     <p>{notification.message}</p>
+                    {notificationHref(notification) ? (
+                      <Link className="row-action" href={notificationHref(notification)!}>
+                        {notification.entityType === "affiliate" ? "Revisar pagos del afiliado" : "Ver pagos sin continuidad"}
+                      </Link>
+                    ) : null}
                     <small>{formatDate(notification.createdAt.slice(0, 10))} · {notification.recipientId ? "Personal" : "Para todos"}</small>
                   </div>
                   {canMarkRead ? (

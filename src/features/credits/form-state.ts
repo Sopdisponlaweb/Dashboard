@@ -6,3 +6,11 @@ export type CreditFormState = {
 };
 
 export const initialCreditFormState: CreditFormState = { status: "idle" };
+
+export type ClearanceFormState = {
+  status: "idle" | "error" | "issued";
+  message?: string;
+  clearanceNumber?: number;
+};
+
+export const initialClearanceFormState: ClearanceFormState = { status: "idle" };

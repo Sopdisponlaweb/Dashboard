@@ -3,12 +3,19 @@
 import { useActionState, useMemo, useState } from "react";
 
 import { Icon } from "@/components/icons";
-import { formatCurrency } from "@/features/affiliates/format";
+import { formatCurrency, formatPeriod, sourceLabels } from "@/features/affiliates/format";
+import type { AffiliationSource } from "@/features/affiliates/types";
 
 import { ColumnMappingForm } from "./column-mapping-form";
 import { applyImportBatch, previewImportBatch } from "./actions";
 import { initialApplyBatchState, initialImportBatchState, type ImportBatchState } from "./form-state";
 import { importRowStatusLabel, type ImportRowStatus } from "./parse";
+
+/** A YYYY-MM (or YYYY_MM, YYYYMM) in the file name, e.g. "Descuentos 2026-08.csv" → "2026-08". */
+function periodInFileName(fileName: string | undefined) {
+  const match = fileName?.match(/(20\d{2})[-_ .]?(0[1-9]|1[0-2])(?!\d)/);
+  return match ? `${match[1]}-${match[2]}` : null;
+}
 
 const rowStatusTone: Record<ImportRowStatus, string> = {
   ready: "import-row-ready",
@@ -18,7 +25,8 @@ const rowStatusTone: Record<ImportRowStatus, string> = {
   "missing-document": "import-row-error",
 };
 
-const PAGE_SIZE_OPTIONS = [100, 500, 1000] as const;
+// Start with 10 rows so the table fits on screen; larger sizes stay one click away.
+const PAGE_SIZE_OPTIONS = [10, 100, 500, 1000] as const;
 
 type ImportBatchFormProps = {
   persistenceEnabled: boolean;
@@ -29,7 +37,7 @@ export function ImportBatchForm({ persistenceEnabled }: ImportBatchFormProps) {
   const [applyState, applyFormAction, applyPending] = useActionState(applyImportBatch, initialApplyBatchState);
   const [checkedLines, setCheckedLines] = useState<Set<number>>(new Set());
   const [lastPreview, setLastPreview] = useState(state.preview);
-  const [pageSize, setPageSize] = useState<number | "all">(100);
+  const [pageSize, setPageSize] = useState<number | "all">(PAGE_SIZE_OPTIONS[0]);
   const [page, setPage] = useState(1);
 
   if (state.preview !== lastPreview) {
@@ -83,6 +91,10 @@ export function ImportBatchForm({ persistenceEnabled }: ImportBatchFormProps) {
     return previewRows.slice(start, start + effectivePageSize);
   }, [previewRows, currentPage, effectivePageSize]);
 
+  const batchPeriodLabel = state.period ? formatPeriod(state.period) : "Sin periodo";
+  const batchSourceLabel = state.source ? sourceLabels[state.source as AffiliationSource] ?? state.source : "Sin fuente";
+  const fileNamePeriod = periodInFileName(state.fileName);
+
   function handlePageSizeChange(value: string) {
     setPageSize(value === "all" ? "all" : Number(value));
     setPage(1);
@@ -116,6 +128,22 @@ export function ImportBatchForm({ persistenceEnabled }: ImportBatchFormProps) {
             </div>
             <span className="panel-tag">{state.preview.rows.length} filas</span>
           </div>
+
+          <dl className="import-batch-meta" aria-label="Datos del lote">
+            <div><dt>Periodo</dt><dd className="sentence-case">{batchPeriodLabel}</dd></div>
+            <div><dt>Fuente</dt><dd>{batchSourceLabel}</dd></div>
+            <div><dt>Archivo</dt><dd>{state.fileName ?? "—"}</dd></div>
+          </dl>
+
+          {fileNamePeriod && state.period && fileNamePeriod !== state.period ? (
+            <div className="form-message message-unavailable" role="alert">
+              <Icon name="calendar" size={16} />
+              <span>
+                El nombre del archivo indica <strong>{formatPeriod(fileNamePeriod)}</strong>, pero el periodo elegido es{" "}
+                <strong>{batchPeriodLabel}</strong>. Revísalo antes de aplicar: los pagos quedarán registrados en el periodo elegido.
+              </span>
+            </div>
+          ) : null}
 
           <section className="directory-summary" aria-label="Resumen del lote">
             <article><span>Listas para aplicar</span><strong>{state.preview.readyCount}</strong></article>
@@ -198,7 +226,10 @@ export function ImportBatchForm({ persistenceEnabled }: ImportBatchFormProps) {
                   <span><Icon name="lock" size={18} /></span>
                   <div>
                     <strong>Conexión segura disponible</strong>
-                    <p>Se aplicarán {selectedCount} filas seleccionadas contra la base de datos.</p>
+                    <p>
+                      Se aplicarán {selectedCount} filas seleccionadas como pagos de <b>{batchPeriodLabel}</b>,
+                      fuente <b>{batchSourceLabel}</b>.
+                    </p>
                   </div>
                 </div>
               )}

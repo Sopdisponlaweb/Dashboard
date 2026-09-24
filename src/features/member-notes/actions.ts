@@ -73,6 +73,6 @@ export async function createBeneficiaryNote(
   }
 
   revalidatePath(`/afiliados/${affiliateId}`);
-  revalidatePath(`/afiliados/${affiliateId}/beneficiarios/${beneficiaryId}/editar`);
+  revalidatePath(`/afiliados/${affiliateId}/beneficiarios/${beneficiaryId}`);
   return { status: "idle" };
 }

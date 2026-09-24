@@ -42,7 +42,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Se
         <div>
           <p className="eyebrow">Archivo</p>
           <h1>Documentos</h1>
-          <p>Consulta el expediente digital de cada titular. Los archivos se conservan en almacenamiento privado y solo se acceden con permiso.</p>
+          <p>Consulta el expediente digital de cada titular y de sus beneficiarios. Los archivos se conservan en almacenamiento privado y solo se acceden con permiso.</p>
         </div>
         <DataSourceBadge connected={isSupabaseConfigured()} />
       </header>
@@ -65,7 +65,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Se
         <form className="filter-bar" method="get">
           <label className="filter-search">
             <span>Buscar</span>
-            <span className="filter-input-wrap"><Icon name="search" size={17} /><input name="q" type="search" defaultValue={query} placeholder="Titular, cédula o título del archivo" /></span>
+            <span className="filter-input-wrap"><Icon name="search" size={17} /><input name="q" type="search" defaultValue={query} placeholder="Titular, beneficiario, cédula o título" /></span>
           </label>
           <label>
             <span>Tipo</span>
@@ -84,12 +84,24 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Se
         {documents.length ? (
           <div className="data-table-wrap">
             <table className="data-table">
-              <thead><tr><th>Titular</th><th>Documento</th><th>Archivo</th><th>Tipo</th><th>Cargado</th><th>Tamaño</th><th><span className="sr-only">Acciones</span></th></tr></thead>
+              <thead><tr><th>Titular</th><th>Pertenece a</th><th>Archivo</th><th>Tipo</th><th>Cargado</th><th>Tamaño</th><th><span className="sr-only">Acciones</span></th></tr></thead>
               <tbody>
                 {documents.map((document) => (
                   <tr key={document.id}>
-                    <td><Link className="row-action" href={`/afiliados/${document.affiliateId}`}>{document.affiliateName}</Link></td>
-                    <td><span className="mono-value">{document.affiliateDocument}</span></td>
+                    <td className="is-wrap">
+                      <div className="document-owner-cell">
+                        <Link className="row-action" href={`/afiliados/${document.affiliateId}`}>{document.affiliateName}</Link>
+                        <span className="mono-value">{document.affiliateDocument}</span>
+                      </div>
+                    </td>
+                    <td className="is-wrap">
+                      {document.beneficiaryId ? (
+                        <div className="document-owner-cell">
+                          <strong><Link className="person-link" href={`/afiliados/${document.affiliateId}/beneficiarios/${document.beneficiaryId}`}>{document.beneficiaryName}</Link></strong>
+                          <span>Beneficiario · {document.beneficiaryRelationship}</span>
+                        </div>
+                      ) : <span className="document-owner-titular">Titular</span>}
+                    </td>
                     <td>{document.title}</td>
                     <td><span className="module-status">{documentKindLabels[document.kind]}</span></td>
                     <td>{formatDate(document.uploadedOn)}</td>
@@ -108,7 +120,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Se
             </table>
           </div>
         ) : (
-          <div className="empty-state"><span><Icon name="file" size={26} /></span><h3>No encontramos documentos</h3><p>Prueba con otro titular o tipo de archivo.</p><Link href="/documentos">Restablecer búsqueda</Link></div>
+          <div className="empty-state"><span><Icon name="file" size={26} /></span><h3>No encontramos documentos</h3><p>Prueba con otro titular, beneficiario o tipo de archivo.</p><Link href="/documentos">Restablecer búsqueda</Link></div>
         )}
       </section>
     </>

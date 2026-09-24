@@ -8,7 +8,7 @@ import { discardSupportDocument, readSupportFile, storeSupportDocument, type Sto
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 
-import type { CreditFormState } from "./form-state";
+import type { ClearanceFormState, CreditFormState } from "./form-state";
 
 const amountSchema = z
   .string()
@@ -171,4 +171,32 @@ export async function registerCreditInstallment(
     installmentId: installmentId as string,
     receiptNumber: (installment?.receipt_number as number | undefined) ?? undefined,
   };
+}
+
+const clearanceErrorMessages: Record<string, string> = {
+  credit_not_found: "No encontramos el crédito.",
+  credit_not_settled: "Solo se puede emitir el paz y salvo de un crédito pagado o condonado.",
+  insufficient_privilege: "No tienes permiso para emitir paz y salvos.",
+};
+
+/** Issues (or returns the already issued) paz y salvo of a settled credit. */
+export async function issueCreditClearance(
+  affiliateId: string,
+  creditId: string,
+): Promise<ClearanceFormState> {
+  if (!isSupabaseConfigured()) {
+    return { status: "error", message: "Activa Supabase local para emitir el paz y salvo." };
+  }
+  const auth = await requireSession();
+  if (!auth.ok) return { status: "error", message: "Tu sesión venció. Inicia sesión nuevamente." };
+
+  const { data, error } = await auth.supabase.rpc("issue_credit_clearance", { p_credit_id: creditId });
+  if (error || !data) {
+    const key = Object.keys(clearanceErrorMessages).find((code) => error?.message?.includes(code));
+    const message = error?.code === "42501" ? clearanceErrorMessages.insufficient_privilege : key ? clearanceErrorMessages[key] : "No fue posible emitir el paz y salvo.";
+    return { status: "error", message };
+  }
+
+  revalidateCreditPaths(affiliateId);
+  return { status: "issued", clearanceNumber: Number((data as { clearance_number: number }).clearance_number) };
 }

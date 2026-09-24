@@ -102,6 +102,11 @@ export function formatRate(rate: number) {
   return `${(rate * 100).toLocaleString("es-CO", { maximumFractionDigits: 2 })}%`;
 }
 
+/** Paz y salvo number, e.g. PS-000001. */
+export function formatClearanceNumber(value: number) {
+  return `PS-${String(value).padStart(6, "0")}`;
+}
+
 export function formatCreditReceiptNumber(value: number) {
   return `AB-${String(value).padStart(6, "0")}`;
 }

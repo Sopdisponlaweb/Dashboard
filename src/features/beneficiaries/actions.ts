@@ -148,7 +148,7 @@ export async function createBeneficiary(
   if (result.error) return mutationErrorState(parsed.data, result.error.code);
 
   revalidatePath(`/afiliados/${affiliateId}`);
-  redirect(`/afiliados/${affiliateId}?result=beneficiary-created`);
+  redirect(`/afiliados/${affiliateId}/beneficiarios/${result.data.id as string}?result=beneficiary-created`);
 }
 
 export async function updateBeneficiary(
@@ -196,5 +196,6 @@ export async function updateBeneficiary(
   if (result.error) return mutationErrorState(parsed.data, result.error.code);
 
   revalidatePath(`/afiliados/${affiliateId}`);
-  redirect(`/afiliados/${affiliateId}?result=beneficiary-updated`);
+  revalidatePath(`/afiliados/${affiliateId}/beneficiarios/${beneficiaryId}`);
+  redirect(`/afiliados/${affiliateId}/beneficiarios/${beneficiaryId}?result=beneficiary-updated`);
 }

@@ -14,7 +14,7 @@ const combiningDiacriticsPattern = new RegExp("[\\u0300-\\u036f]", "g");
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 
-function sanitizeFileName(name: string) {
+export function sanitizeFileName(name: string) {
   const normalized = name
     .normalize("NFD")
     .replace(combiningDiacriticsPattern, "")
@@ -23,14 +23,14 @@ function sanitizeFileName(name: string) {
 }
 
 /** Returns the optional support file from a form, or an error message if it is not acceptable. */
-export function readSupportFile(formData: FormData, field = "supportFile") {
+export function readSupportFile(formData: FormData, field = "supportFile", noun = "El soporte") {
   const file = formData.get(field);
   if (!(file instanceof File) || file.size === 0) return { file: null, mime: null, error: null };
 
   const mime = supportFileTypes.find((type) => file.type === type.mime || type.extension.test(file.name))?.mime ?? null;
-  if (!mime) return { file: null, mime: null, error: "El soporte debe ser PDF, PNG o JPG." };
+  if (!mime) return { file: null, mime: null, error: `${noun} debe ser PDF, PNG o JPG.` };
   if (file.size > maxSupportFileSizeBytes) {
-    return { file: null, mime: null, error: "El soporte supera el tamaño máximo permitido (15 MB)." };
+    return { file: null, mime: null, error: `${noun} supera el tamaño máximo permitido (15 MB).` };
   }
   return { file, mime, error: null };
 }

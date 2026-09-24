@@ -8,8 +8,9 @@ export async function GET(_request: Request, { params }: RouteParams) {
   const { id, documentId } = await params;
   const supabase = await createClient();
 
+  // The directory view resolves the titular of beneficiary files too.
   const { data: document, error } = await supabase
-    .from("member_documents")
+    .from("member_document_directory")
     .select("storage_path")
     .eq("id", documentId)
     .eq("affiliate_id", id)

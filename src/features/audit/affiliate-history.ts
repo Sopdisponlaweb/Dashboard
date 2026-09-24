@@ -19,7 +19,7 @@ import type { AffiliateHistoryEntry, HistoryCategory } from "./affiliate-history
 import { diffRecordHistoryRow, type AuditOperation, type HistoryLookups, type RecordChange } from "./repository";
 
 type Row = Record<string, unknown>;
-type Lookups = HistoryLookups & { paymentMethods: Map<string, string> };
+type Lookups = HistoryLookups & { paymentMethods: Map<string, string>; beneficiaryNames: Map<string, string> };
 
 const categoryByTable: Record<string, HistoryCategory> = {
   affiliates: "datos",
@@ -30,6 +30,7 @@ const categoryByTable: Record<string, HistoryCategory> = {
   credits: "creditos",
   credit_installments: "creditos",
   member_documents: "documentos",
+  credit_clearances: "creditos",
   member_notes: "observaciones",
 };
 
@@ -205,8 +206,20 @@ function describe(table: string, operation: AuditOperation, before: Row, after: 
     case "member_documents": {
       const kind = documentKindLabels[row.kind as MemberDocument["kind"]] ?? "Documento";
       const title = operation === "INSERT" ? "Documento cargado" : operation === "DELETE" ? "Documento eliminado" : "Documento actualizado";
-      return { title, detail: joinParts(text(row.title), kind), changes: [] };
+      const owner = row.beneficiary_id ? lookups.beneficiaryNames.get(text(row.beneficiary_id)) ?? "un beneficiario" : null;
+      return { title, detail: joinParts(text(row.title), kind, owner ? `De ${owner}` : null), changes: [] };
     }
+
+    case "credit_clearances":
+      return {
+        title: "Paz y salvo emitido",
+        detail: joinParts(
+          `PS-${text(row.clearance_number).padStart(6, "0")}`,
+          row.settlement === "forgiven" ? "Crédito condonado" : "Crédito pagado",
+          `Total ${money(row.total_amount)}`,
+        ),
+        changes: [],
+      };
 
     case "member_notes":
       return { title: operation === "DELETE" ? "Observación eliminada" : "Observación agregada", detail: truncate(text(row.body), 240), changes: [] };
@@ -227,17 +240,26 @@ export async function getAffiliateHistory(affiliateId: string, limit = 300): Pro
   const rows = (data ?? []) as Row[];
   if (!rows.length) return [];
 
-  const [municipalities, organizations, policeRanks, paymentMethods] = await Promise.all([
+  // Beneficiary files name their owner; fetch just the beneficiaries those rows mention.
+  const beneficiaryIds = [...new Set(rows
+    .filter((row) => row.table_name === "member_documents")
+    .map((row) => text(((row.new_data ?? row.old_data) as Row | null)?.beneficiary_id))
+    .filter(Boolean))];
+  const [municipalities, organizations, policeRanks, paymentMethods, beneficiaryRows] = await Promise.all([
     listMunicipalities(),
     listOrganizations(),
     listPoliceRanks(),
     listPaymentMethods(),
+    beneficiaryIds.length
+      ? supabase.from("beneficiaries").select("id, first_names, last_names").in("id", beneficiaryIds).then(({ data }) => (data ?? []) as Row[])
+      : Promise.resolve([] as Row[]),
   ]);
   const lookups: Lookups = {
     municipalities: new Map(municipalities.map((m) => [m.id, `${m.name}, ${m.department}`])),
     organizations: new Map(organizations.map((o) => [o.id, o.name])),
     policeRanks: new Map(policeRanks.map((r) => [r.id, r.name])),
     paymentMethods: new Map(paymentMethods.map((m) => [m.id, m.name])),
+    beneficiaryNames: new Map(beneficiaryRows.map((b) => [text(b.id), personName(b)])),
   };
 
   return rows.flatMap((row) => {

@@ -11,7 +11,17 @@ export type NotificationRecord = {
   message: string;
   readAt: string | null;
   createdAt: string;
+  /** What the notification is about, for system alerts (e.g. an affiliate with a payment gap). */
+  entityType: string | null;
+  entityId: string | null;
 };
+
+/** Where a system notification leads, if anywhere. */
+export function notificationHref(notification: Pick<NotificationRecord, "entityType" | "entityId">) {
+  if (notification.entityType === "affiliate" && notification.entityId) return `/afiliados/${notification.entityId}?tab=pagos`;
+  if (notification.entityType === "payment_batch" || notification.entityType === "payment_gaps") return "/pagos/continuidad";
+  return null;
+}
 
 function mapNotificationRow(row: Record<string, unknown>): NotificationRecord {
   return {
@@ -22,6 +32,8 @@ function mapNotificationRow(row: Record<string, unknown>): NotificationRecord {
     message: row.message as string,
     readAt: (row.read_at as string | null) ?? null,
     createdAt: row.created_at as string,
+    entityType: (row.entity_type as string | null) ?? null,
+    entityId: (row.entity_id as string | null) ?? null,
   };
 }
 
@@ -31,7 +43,7 @@ export async function listMyNotifications(): Promise<NotificationRecord[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("notifications")
-    .select("id, recipient_id, level, title, message, read_at, created_at")
+    .select("id, recipient_id, level, title, message, read_at, created_at, entity_type, entity_id")
     .order("created_at", { ascending: false })
     .limit(100);
 

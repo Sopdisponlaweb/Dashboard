@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { Suspense } from "react";
 
 import { DataSourceBadge } from "@/components/data-source-badge";
 import { Icon, type IconName } from "@/components/icons";
 import { formatCurrency, formatDate, formatPeriod, sourceLabels } from "@/features/affiliates/format";
 import { getDashboardSummary } from "@/features/affiliates/repository";
 import { listActiveAnnouncements } from "@/features/announcements/repository";
+import { PaymentGapsOverview, PaymentGapsOverviewFallback } from "@/features/payments/payment-gaps-overview";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 type Metric = { label: string; value: number; note: string; tone: string; icon: IconName };
@@ -107,7 +109,7 @@ export default async function DashboardPage() {
               <strong>{announcement.title}</strong>
               <span>{announcement.message}</span>
             </div>
-            <span className="announcement-meta">Vigente hasta {formatDate(announcement.endsAt.slice(0, 10))} · <Link href="/avisos">gestionar avisos</Link></span>
+            <span className="announcement-meta">Vigente hasta {formatDate(announcement.endsAt.slice(0, 10))} · <Link href="/avisos">Gestionar avisos</Link></span>
           </section>
         ))
       ) : (
@@ -117,7 +119,7 @@ export default async function DashboardPage() {
             <strong>Sin avisos vigentes</strong>
             <span>No hay comunicados internos activos en este momento.</span>
           </div>
-          <span className="announcement-meta"><Link href="/avisos">gestionar avisos</Link></span>
+          <span className="announcement-meta"><Link href="/avisos">Gestionar avisos</Link></span>
         </section>
       )}
 
@@ -129,6 +131,18 @@ export default async function DashboardPage() {
       <section aria-labelledby="beneficiarios-heading">
         <div className="section-heading"><h2 id="beneficiarios-heading">Titulares y beneficiarios en histórico</h2><span>Los fallecidos no aparecen en vistas operativas</span></div>
         <div className="metrics-grid">{beneficiaryMetrics.map((metric) => <MetricCard key={metric.label} metric={metric} />)}</div>
+      </section>
+
+      <section aria-labelledby="continuidad-heading">
+        <div className="section-heading">
+          <h2 id="continuidad-heading">Continuidad de pagos</h2>
+          <span>Meses sin pago entre dos meses pagados · últimos 12 meses · <Link href="/pagos/continuidad">Ver titulares</Link></span>
+        </div>
+        {persistenceEnabled ? (
+          <Suspense fallback={<PaymentGapsOverviewFallback />}>
+            <PaymentGapsOverview />
+          </Suspense>
+        ) : <p className="empty-hint">Disponible con la conexión a Supabase.</p>}
       </section>
 
       <div className="dashboard-grid">
