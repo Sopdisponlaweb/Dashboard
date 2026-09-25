@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { ASSISTANT_ENABLED } from "@/features/assistant/config";
 import { getProvider, isAnyProviderConfigured } from "@/features/assistant/providers";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
@@ -17,6 +18,10 @@ Reglas:
 type IncomingMessage = { role: "user" | "assistant"; content: string };
 
 export async function POST(request: Request) {
+  if (!ASSISTANT_ENABLED) {
+    return NextResponse.json({ message: "El asistente de IA está deshabilitado." }, { status: 404 });
+  }
+
   if (!isSupabaseConfigured()) {
     return NextResponse.json({ message: "El asistente requiere una conexión activa a Supabase." }, { status: 503 });
   }

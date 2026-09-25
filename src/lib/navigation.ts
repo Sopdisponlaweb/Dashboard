@@ -1,4 +1,5 @@
 import type { IconName } from "@/components/icons";
+import { ASSISTANT_ENABLED } from "@/features/assistant/config";
 
 export type NavigationItem = {
   href: string;
@@ -24,5 +25,5 @@ export const secondaryNavigation: NavigationItem[] = [
   { href: "/catalogos", label: "Catálogos", icon: "layers" },
   { href: "/usuarios", label: "Usuarios y accesos", icon: "lock" },
   { href: "/auditoria", label: "Auditoría", icon: "history" },
-  { href: "/asistente", label: "Asistente IA", icon: "message" },
+  ...(ASSISTANT_ENABLED ? [{ href: "/asistente", label: "Asistente IA", icon: "message" as const }] : []),
 ];

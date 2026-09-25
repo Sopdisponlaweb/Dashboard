@@ -1,14 +1,18 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 
 import { DataSourceBadge } from "@/components/data-source-badge";
 import { Icon } from "@/components/icons";
 import { AssistantChat } from "@/features/assistant/chat-widget";
+import { ASSISTANT_ENABLED } from "@/features/assistant/config";
 import { assistantProviders, isAnyProviderConfigured, listAvailableModels } from "@/features/assistant/providers";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 export const metadata: Metadata = { title: "Asistente IA" };
 
 export default function AssistantPage() {
+  if (!ASSISTANT_ENABLED) notFound();
+
   const persistenceEnabled = isSupabaseConfigured();
   const configured = isAnyProviderConfigured();
   const availableModels = listAvailableModels();
